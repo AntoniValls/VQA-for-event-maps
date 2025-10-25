@@ -1,7 +1,7 @@
 from transformers import ViltProcessor, ViltForQuestionAnswering
 from PIL import Image
 import torch
-from utils import save_preview
+from utils.utils import save_preview
 
 def main():
     path = "../BielGlasses/datasets/BIEL/17/image_0/000064.png"
