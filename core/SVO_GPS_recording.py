@@ -2,14 +2,18 @@
 This code allows us to record a SVO file using a connected ZED camera
 while it also saves the GPS data from a connected GPS module.
 """
-import os, sys
+from pathlib import Path
+import sys, os
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 import logging
 import pyzed.sl as sl
 import time
 from typing import Optional
 
 from config.settings import CFG
-from core.GPS_utils import GPSCoordinate, GPSLogger, GPSWebSocketClient
+from GPS_utils import GPSCoordinate, GPSLogger, GPSWebSocketClient
 from inout.utils import create_run_dir
 
 # Simple thread-safe frame counter ----------

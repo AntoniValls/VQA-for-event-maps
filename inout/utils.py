@@ -1,7 +1,14 @@
-import os
+import os, sys
 from typing import Tuple
 from datetime import datetime, timezone
 from dataclasses import asdict
+
+def progress_bar(percent_done, bar_length=50):
+    # Display a progress bar
+    done_length = int(bar_length * percent_done / 100)
+    bar = '=' * done_length + '-' * (bar_length - done_length)
+    sys.stdout.write('[%s] %i%s\r' % (bar, percent_done, '%'))
+    sys.stdout.flush()
 
 def create_run_dir(
     base: str = "../data/recordings",

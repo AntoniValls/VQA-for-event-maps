@@ -1,5 +1,5 @@
 # --- headless-safe preview helper ---
-def save_preview(img, out_path="data/preview.png"):
+def save_preview(img, out_path="../data/preview.png"):
     import matplotlib
     matplotlib.use("Agg")  # no GUI needed
     import matplotlib.pyplot as plt
