@@ -7,7 +7,6 @@ if str(ROOT) not in sys.path:
 from transformers import ViltProcessor, ViltForQuestionAnswering, Blip2Processor, Blip2ForConditionalGeneration
 from PIL import Image
 import torch
-import requests
 from viz.viz_utils import save_preview
 
 def vilt(text, image):
@@ -30,7 +29,7 @@ def blip2(text, image):
     processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b", use_fast=True)
     model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", dtype=torch.float16).to(device="cuda")
     
-     # Prompt template helps BLIP-2 stay in VQA mode
+    # Prompt template helps BLIP-2 stay in VQA mode
     prompt = f"Question: {text} Answer:"
 
     # be explicit with keywords

@@ -29,9 +29,9 @@ class ZED:
 
 @dataclass
 class Config:
-    recording: Recording = Recording()
-    gps: GPS = GPS()
-    zed: ZED = ZED()
+    recording: Recording = field(default_factory=Recording)
+    gps: GPS = field(default_factory=GPS)
+    zed: ZED = field(default_factory=ZED)
 
 # single import for the whole app
 CFG = Config()

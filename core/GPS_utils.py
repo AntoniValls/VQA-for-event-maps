@@ -78,6 +78,8 @@ class GPSLogger:
         """Log a new GPS coordinate."""
         with self._lock:
             self.gps_data.append(coord)
+        
+        return 
 
     def save_to_csv(self) -> None:
         """Save logged GPS data to a CSV file."""
@@ -154,9 +156,10 @@ class GPSWebSocketClient:
                 accuracy=float(data.get('accuracy', 0)),
                 time=int(data.get('time', 0)),
                 speed=float(data.get('speed', 0)) if 'speed' in data else 0.0,
-                frame=current_frame  # <-- NEW
+                frame=current_frame  
             )
             self.data_logger.log_gps(coord) # Log GPS with frame tag
+            
         except Exception as e:
             logging.error(f"GPS message error: {e}")
 

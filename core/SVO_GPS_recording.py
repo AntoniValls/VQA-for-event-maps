@@ -34,7 +34,6 @@ class FrameCounter:
             return self._value
 
 def record():
-
     # --------------------- Initial setup ---------------------
     run_dir = create_run_dir(CFG.recording.base_run_dir) 
 
@@ -49,9 +48,13 @@ def record():
         ]
     )
     logging.info(f"Run directory: {run_dir}")
+
+    # Set SVO output path
+    svo_path = os.path.join(run_dir, CFG.recording.svo_filename)
     
     # Initialize GPS logger
     gps_logger = GPSLogger(os.path.join(run_dir, CFG.recording.gps_filename))
+    
     
     # Create a shared frame counter so GPS records can tag their frame
     frame_counter = FrameCounter()
@@ -79,7 +82,7 @@ def record():
         return
 
     # Set SVO recording parameters
-    svo_params = sl.RecordingParameters(CFG.recording.svo_filename, sl.SVO_COMPRESSION_MODE.H265)
+    svo_params = sl.RecordingParameters(svo_path, sl.SVO_COMPRESSION_MODE.H265)
     err = zed.enable_recording(svo_params)
     if err != sl.ERROR_CODE.SUCCESS:
         logging.error(f"Error starting SVO recording: {err}")
@@ -89,16 +92,13 @@ def record():
 
     runtime = sl.RuntimeParameters()
     print("SVO is Recording, use Ctrl-C to stop.") 
-    frames_recorded = 0
-    latest_gps: Optional[GPSCoordinate] = None      # cache last known GPS 
-
 
     # --------------------- Recording loop --------------------- 
     try:
         while True:
             if zed.grab(runtime) <= sl.ERROR_CODE.SUCCESS:  # new frame acquired
                 current_frame = frame_counter.increment()
-                print("Frame count: " + str(current_frame), end="\r")
+                print(f"Frame count: {current_frame}; GPS count: {len(gps_logger.gps_data)}" , end="\r")
             
     except KeyboardInterrupt:
         logging.info("Processing interrupted by user")
@@ -114,4 +114,5 @@ def record():
     return
 
 if __name__ == "__main__":
+
     record()
