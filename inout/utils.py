@@ -3,11 +3,11 @@ from typing import Tuple
 from datetime import datetime, timezone
 from dataclasses import asdict
 
-def progress_bar(percent_done, bar_length=50):
-    # Display a progress bar
-    done_length = int(bar_length * percent_done / 100)
-    bar = '=' * done_length + '-' * (bar_length - done_length)
-    sys.stdout.write('[%s] %i%s\r' % (bar, percent_done, '%'))
+def progress_bar(pct, width=30):
+    pct = max(0.0, min(100.0, float(pct)))
+    filled = int(width * pct / 100.0)
+    bar = "█" * filled + "·" * (width - filled)
+    sys.stdout.write(f"\r[{bar}] {pct:6.2f}%")
     sys.stdout.flush()
 
 def create_run_dir(

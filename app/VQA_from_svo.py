@@ -6,26 +6,41 @@ if str(ROOT) not in sys.path:
 
 import  os
 import pyzed.sl as sl
-from transformers import ViltProcessor, ViltForQuestionAnswering, Blip2Processor, Blip2ForConditionalGeneration
+from transformers import ViltProcessor, ViltForQuestionAnswering, InstructBlipProcessor, InstructBlipForConditionalGeneration
 import cv2
 from PIL import Image
 import json
 import torch
 from inout.utils import progress_bar
 
-"""
-Simple file that allows us to run a VQA model on a .svo file
-and save the answer and the image embedding
-"""
-
-QUESTION = "Describe any obstacles in the scene."
-MODEL = "blip2" # vilt or blip2
-
-# Prompt template helps models stay in VQA mode
-PROMPT = f"Question: {QUESTION} Answer:"
+PROMPT = (
+    "You are an expert at detecting pedestrian obstacles for people with low vision. "
+    "Classify the scene with these possible labels (multi-label allowed): "
+    "1) Obstacle — something blocks the user's presumed walking path. "
+    "2) Traffic — a crosswalk or road is directly in front; if visible, state crosswalk signal as 'red' or 'green'. "
+    "3) Anomaly — long-term change, e.g., construction. "
+    "4) Clean — path appears safe and none of the above apply. "
+    "If multiple labels apply, include all, but prioritize findings in this order: Obstacle > Traffic > Anomaly > Clean. "
+    "Output STRICTLY in JSON with keys: "
+    "{'labels': [list of strings from {'Obstacle','Traffic','Anomaly','Clean'}], "
+    "'crosswalk_signal': 'red'|'green'|null, "
+    "'rationale': 'one short sentence', "
+    "'confidences': {'Obstacle': float in [0,1], 'Traffic': float in [0,1], 'Anomaly': float in [0,1], 'Clean': float in [0,1]}} "
+    "Do not include extra text outside JSON."
+)
 
 def main(svo_input_path,
          output_dir):
+
+    # device + dtype
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    base_dtype = torch.float16 if device == "cuda" else torch.float32
+    print(f"Using device: {device} (dtype: {base_dtype})")
+
+    # I/O
+    enc_dir = os.path.join(output_dir, "encodings")
+    os.makedirs(enc_dir, exist_ok=True)
+    answers_path = os.path.join(output_dir, "answers.jsonl")   # answers.jsonl: one JSON per line {frame, answer, score(optional)}
 
     # ZED init
     zed = sl.Camera()
@@ -44,88 +59,105 @@ def main(svo_input_path,
         exit(1)
     
     runtime = sl.RuntimeParameters()
-
-    # Prepare the output directory
-    enc_dir = os.path.join(output_dir, "encodings")
-    os.makedirs(enc_dir, exist_ok=True)
-    answers_path = os.path.join(output_dir, "answers.jsonl")   # answers.jsonl: one JSON per line {frame, answer, score(optional)}
-
-    # Initialize the variables
     nb_frames = zed.get_svo_number_of_frames()
-    left_image = sl.Mat()
-
-    # Initialize the encoder and VQA  model
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
+    
+    # Load model + processor
     if MODEL == "vilt":
         processor = ViltProcessor.from_pretrained("dandelin/vilt-b32-finetuned-vqa")
-        model = ViltForQuestionAnswering.from_pretrained("dandelin/vilt-b32-finetuned-vqa", dtype=torch.float16)
+        torch_dtype = base_dtype if device == "cuda" else torch.float32
+        model = ViltForQuestionAnswering.from_pretrained(
+            "dandelin/vilt-b32-finetuned-vqa", dtype=torch_dtype
+        )
     elif MODEL == "blip2":
-        processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b", use_fast=True)
-        model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", dtype=torch.float16)
+        if device != "cuda":
+            print("BLIP2 generally requires CUDA for practical inference.")
+            return 1
+        processor = InstructBlipProcessor.from_pretrained("Salesforce/instructblip-vicuna-7b", use_fast=True)
+        model = InstructBlipForConditionalGeneration.from_pretrained("Salesforce/instructblip-vicuna-7b", dtype=base_dtype)
     else:
-        raise ValueError(f"Unknown model: {MODEL}. Choose 'vilt' or 'blip2'.")
+        print(f"Unknown model: {MODEL}. Choose 'vilt' or 'blip2'.")
+        return 1
+    
     model.to(device)
+    model.eval()
 
     # Start main loop
-    sys.stdout.write(f"VQA on SVO ({nb_frames} frames)... Use Ctrl-C to interrupt conversion.\n")
+    print(f"VQA on SVO ({nb_frames} frames). Press Ctrl-C to stop.\n")
+    try:
+        with Path(answers_path).open("a", encoding="utf-8") as ans_f:
+            while True:
+                err = zed.grab(runtime)
+                if err == sl.ERROR_CODE.SUCCESS:
+                    frame = zed.get_svo_position()
 
-    with Path(answers_path).open("a", encoding="utf-8") as ans_f:
-        while True:
-            err = zed.grab(runtime)
-            if err == sl.ERROR_CODE.SUCCESS:
-                frame = zed.get_svo_position()
+                    if frame % FRAME_STRIDE == 0:
+                        # get left image as PIL RGB
+                        left = sl.Mat()
+                        zed.retrieve_image(left, sl.VIEW.LEFT)
+                        arr = left.get_data()
+                        if arr.shape[2] == 4:
+                            img_rgb = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGB)
+                        else:
+                            img_rgb = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+                        image = Image.fromarray(img_rgb)
 
-                # Process every 100th frame
-                if frame % 100 == 0:
-                    zed.retrieve_image(left_image, sl.VIEW.LEFT)
+                        # ----- cached encoding path -----
+                        enc_path = os.path.join(enc_dir, f"frame_{frame:06d}.pt")
+                        cached = False
 
-                    # sl.Mat --> PIL RGB
-                    image = Image.fromarray(cv2.cvtColor(left_image.get_data(), cv2.COLOR_BGR2RGB))
+                        if os.path.exists(enc_path):
+                            # load cached tensors 
+                            encoding = torch.load(enc_path, weights_only=False).to(device=device)
+                            cached = True
+                        else:
+                            # build new encoding and save to CPU cache
+                            encoding = processor(images=image, text=PROMPT, return_tensors="pt").to(device=device, dtype=base_dtype)
 
-                    # Encode the image
-                    encoding = processor(images=image, text=PROMPT, return_tensors="pt").to(device, torch.float16)
+                            # Save the encodings
+                            torch.save(encoding, enc_path)
 
-                    # Save the encodings
-                    torch.save(encoding, os.path.join(enc_dir, f"frame_{frame:06d}.pt"))
+                        # ----- inference -----
+                        with torch.no_grad():
+                            if MODEL == "vilt":
+                                outputs = model(**encoding)
+                                logits = outputs.logits
+                                idx = logits.argmax(-1).item()
+                                answer_text = model.config.id2label[idx]
+                                prob = torch.softmax(logits, dim=-1)[0, idx].item()
+                                result_text = answer_text  # may not be strict JSON; keep raw text
+                                confidence = prob
+                            else:  # blip2
+                                output_ids = model.generate(**encoding, max_new_tokens=256)
+                                result_text = processor.decode(output_ids[0], skip_special_tokens=True)
+                                result_text = result_text.split("Answer:")[-1].strip(" ,.;:")
+                                confidence = None
 
-                    # VQA
-                    with torch.no_grad():
-                        if MODEL == "vilt":
-                            outputs = model(**encoding)
-                            logits = outputs.logits
-                            probs = torch.softmax(logits, dim=-1)
-                            idx = logits.argmax(-1).item()
-                            answer = model.config.id2label[idx]
-                            confidence = probs[0, idx].item()
-                        
-                        elif MODEL == "blip2":
-                            output = model.generate(**encoding)
-                            answer = processor.decode(output[0], skip_special_tokens=True)
-                            confidence = None  # BLIP2 does not provide confidence scores directly
-                    
-                    # Write answer line
-                    ans_obj = {
-                        "frame": int(frame),
-                        "question": QUESTION,
-                        "answer": answer,
-                        "confidence": confidence
-                    }
-                    ans_f.write(json.dumps(ans_obj) + "\n")
-                    ans_f.flush()
+                        # ----- write result -----
+                        ans_obj = {
+                            "frame": int(frame),
+                            "question": PROMPT,
+                            "answer": result_text,
+                            "confidence": confidence,
+                            "cached_encoding": cached
+                        }
+                        ans_f.write(json.dumps(ans_obj) + "\n")
+                        ans_f.flush()
 
-                
-                progress_bar((frame + 1) / max(1, nb_frames) * 100, 30)
+                    # progress
+                    progress_bar((frame + 1) / max(1, nb_frames) * 100, 30)
 
-            elif err == sl.ERROR_CODE.END_OF_SVOFILE_REACHED:
-                progress_bar(100, 30)
-                sys.stdout.write("\nSVO end has been reached. Exiting now.\n")
-                break
-
-    zed.close()
+                elif err == sl.ERROR_CODE.END_OF_SVOFILE_REACHED:
+                    sys.stdout.write("\nSVO end reached. Exiting.\n")
+                    break
+    finally:
+        zed.close()
     return 0 
 
 if __name__ == "__main__":
+    
+    MODEL = "blip2" # vilt or blip2
+    FRAME_STRIDE = 100  # process every N-th frame
+
     seq = 0
     print(f"Processing sequence {seq}...")
     
