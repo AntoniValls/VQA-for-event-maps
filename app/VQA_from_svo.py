@@ -13,21 +13,14 @@ import json
 import torch
 from inout.utils import progress_bar
 
-PROMPT = (
-    "You are an expert at detecting pedestrian obstacles for people with low vision. "
-    "Classify the scene with these possible labels (multi-label allowed): "
-    "1) Obstacle — something blocks the user's presumed walking path. "
-    "2) Traffic — a crosswalk or road is directly in front; if visible, state crosswalk signal as 'red' or 'green'. "
-    "3) Anomaly — long-term change, e.g., construction. "
-    "4) Clean — path appears safe and none of the above apply. "
-    "If multiple labels apply, include all, but prioritize findings in this order: Obstacle > Traffic > Anomaly > Clean. "
-    "Output STRICTLY in JSON with keys: "
-    "{'labels': [list of strings from {'Obstacle','Traffic','Anomaly','Clean'}], "
-    "'crosswalk_signal': 'red'|'green'|null, "
-    "'rationale': 'one short sentence', "
-    "'confidences': {'Obstacle': float in [0,1], 'Traffic': float in [0,1], 'Anomaly': float in [0,1], 'Clean': float in [0,1]}} "
-    "Do not include extra text outside JSON."
-)
+BASE = "You are an expert at detecting pedestrian obstacles for people with low vision."
+OBSTACLE_PROMPT = "Is there any obstacle blocking the user's presumed walking path?"
+TRAFFIC_PROMPT = "Is there a crosswall or road in front?"
+RED_LIGHT_PROMPT = "Is there a red light making the user to stop?"
+ANOMALY_PROMPT = "Is there a contruction blocking the user's presumed walking path?"
+CLEAN_PROMPT = "Does the path appear to be safe?"
+
+ALL_PROMPTS = (OBSTACLE_PROMPT, TRAFFIC_PROMPT, RED_LIGHT_PROMPT, ANOMALY_PROMPT, CLEAN_PROMPT)
 
 def main(svo_input_path,
          output_dir):
@@ -41,7 +34,7 @@ def main(svo_input_path,
     enc_dir = os.path.join(output_dir, "encodings")
     os.makedirs(enc_dir, exist_ok=True)
     answers_path = os.path.join(output_dir, "answers.jsonl")   # answers.jsonl: one JSON per line {frame, answer, score(optional)}
-
+    print(answers_path)
     # ZED init
     zed = sl.Camera()
     input_type = sl.InputType()
@@ -68,12 +61,15 @@ def main(svo_input_path,
         model = ViltForQuestionAnswering.from_pretrained(
             "dandelin/vilt-b32-finetuned-vqa", dtype=torch_dtype
         )
+
     elif MODEL == "blip2":
         if device != "cuda":
             print("BLIP2 generally requires CUDA for practical inference.")
             return 1
+        
         processor = InstructBlipProcessor.from_pretrained("Salesforce/instructblip-vicuna-7b", use_fast=True)
         model = InstructBlipForConditionalGeneration.from_pretrained("Salesforce/instructblip-vicuna-7b", dtype=base_dtype)
+    
     else:
         print(f"Unknown model: {MODEL}. Choose 'vilt' or 'blip2'.")
         return 1
@@ -105,48 +101,57 @@ def main(svo_input_path,
                         enc_path = os.path.join(enc_dir, f"frame_{frame:06d}.pt")
                         cached = False
 
-                        if os.path.exists(enc_path):
-                            # load cached tensors 
-                            encoding = torch.load(enc_path, weights_only=False).to(device=device)
-                            cached = True
-                        else:
-                            # build new encoding and save to CPU cache
+                        # if os.path.exists(enc_path):
+                        #     # load cached tensors 
+                        #     encoding = torch.load(enc_path, weights_only=False).to(device=device)
+                        #     cached = True
+                        # else:
+                        # build new encoding and save to CPU cache
+
+                        # Run all the prompts about the semantic labels
+                        for PROMPT in ALL_PROMPTS:
+
+                            # Add the base
+                            PROMPT = BASE + PROMPT
+                            
+                            # Run the encoding
                             encoding = processor(images=image, text=PROMPT, return_tensors="pt").to(device=device, dtype=base_dtype)
 
-                            # Save the encodings
-                            torch.save(encoding, enc_path)
+                            # Inference
+                            with torch.no_grad():
+                                if MODEL == "vilt":
+                                    outputs = model(**encoding)
+                                    logits = outputs.logits
+                                    idx = logits.argmax(-1).item()
+                                    answer_text = model.config.id2label[idx]
+                                    prob = torch.softmax(logits, dim=-1)[0, idx].item()
+                                    result_text = answer_text  # may not be strict JSON; keep raw text
+                                    confidence = prob
+                                else:  # blip2
+                                    output_ids = model.generate(**encoding, max_new_tokens=256)
+                                    result_text = processor.decode(output_ids[0], skip_special_tokens=True)
+                                    result_text = result_text.split("Answer:")[-1].strip(" ,.;:")
+                                    confidence = None
 
-                        # ----- inference -----
-                        with torch.no_grad():
-                            if MODEL == "vilt":
-                                outputs = model(**encoding)
-                                logits = outputs.logits
-                                idx = logits.argmax(-1).item()
-                                answer_text = model.config.id2label[idx]
-                                prob = torch.softmax(logits, dim=-1)[0, idx].item()
-                                result_text = answer_text  # may not be strict JSON; keep raw text
-                                confidence = prob
-                            else:  # blip2
-                                output_ids = model.generate(**encoding, max_new_tokens=256)
-                                result_text = processor.decode(output_ids[0], skip_special_tokens=True)
-                                result_text = result_text.split("Answer:")[-1].strip(" ,.;:")
-                                confidence = None
+                            # ----- write result -----
+                            ans_obj = {
+                                "frame": int(frame),
+                                "question": PROMPT,
+                                "answer": result_text,
+                                "confidence": confidence,
+                                "cached_encoding": cached
+                            }
+                            ans_f.write(json.dumps(ans_obj) + "\n")
+                            ans_f.flush()
 
-                        # ----- write result -----
-                        ans_obj = {
-                            "frame": int(frame),
-                            "question": PROMPT,
-                            "answer": result_text,
-                            "confidence": confidence,
-                            "cached_encoding": cached
-                        }
-                        ans_f.write(json.dumps(ans_obj) + "\n")
-                        ans_f.flush()
+                        # Save the last encoding (this needs to be fixed, so the encoding should be invariable to the prompt)
+                        torch.save(encoding, enc_path)
 
-                    # progress
+                    # Progress
                     progress_bar((frame + 1) / max(1, nb_frames) * 100, 30)
 
                 elif err == sl.ERROR_CODE.END_OF_SVOFILE_REACHED:
+                    progress_bar(100, 30)
                     sys.stdout.write("\nSVO end reached. Exiting.\n")
                     break
     finally:
@@ -155,10 +160,10 @@ def main(svo_input_path,
 
 if __name__ == "__main__":
     
-    MODEL = "blip2" # vilt or blip2
+    MODEL = "vilt" # vilt or blip2
     FRAME_STRIDE = 100  # process every N-th frame
 
-    seq = 0
+    seq = 17
     print(f"Processing sequence {seq}...")
     
     input_svo_path = f"../data/svo/IRI_{seq:02d}.svo2"
