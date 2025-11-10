@@ -6,7 +6,10 @@ if str(ROOT) not in sys.path:
 
 import os
 import pyzed.sl as sl
-from transformers import ViltProcessor, ViltForQuestionAnswering, InstructBlipProcessor, InstructBlipForConditionalGeneration
+from transformers import ViltProcessor, ViltForQuestionAnswering, \
+                         InstructBlipProcessor, InstructBlipForConditionalGeneration, \
+                         LlavaNextProcessor, LlavaNextForConditionalGeneration
+
 import cv2
 from PIL import Image
 import json
@@ -133,8 +136,15 @@ def main(svo_input_path, output_dir):
             return 1
         processor = InstructBlipProcessor.from_pretrained("Salesforce/instructblip-vicuna-7b", use_fast=True)
         model = InstructBlipForConditionalGeneration.from_pretrained("Salesforce/instructblip-vicuna-7b", dtype=base_dtype)
+    
+    elif MODEL == "llava":
+        if device != "cuda":
+            print("LLaVA-Next generally requires CUDA for practical inference.")
+            return 1
+        processor = LlavaNextProcessor.from_pretrained("llava/llava-next-7b", use_fast=True)
+        model = LlavaNextForConditionalGeneration.from_pretrained("llava/llava-next-7b", dtype=base_dtype)
     else:
-        print(f"Unknown model: {MODEL}. Choose 'vilt' or 'blip2'.")
+        print(f"Unknown model: {MODEL}. Choose 'vilt', 'blip2', or 'llava'.")
         return 1
     
     model.to(device)
@@ -202,7 +212,7 @@ def main(svo_input_path, output_dir):
                                 else:  # blip2
                                     output_ids = model.generate(**encoding, max_new_tokens=256)
                                     result_text = processor.decode(output_ids[0], skip_special_tokens=True)
-                                    result_text = result_text.split("Answer:")[-1].strip(" ,.;:")
+                                    result_text = result_text.split("?")[-1].strip(" ,.;:")
                                     confidence = None
 
                             # Store answer for display
@@ -241,9 +251,9 @@ def main(svo_input_path, output_dir):
                             else:
                                 print(f"  {prompt_short:12s}: {answer}")
                         print(f"{'='*60}")
-                        print("Click on image or press any key to continue...")
+                        print("Press any key to continue...")
 
-                        # Wait for user to click or press a key
+                        # Wait for user to press a key
                         cv2.waitKey(0)
 
                     # Progress
@@ -260,7 +270,7 @@ def main(svo_input_path, output_dir):
     return 0
 
 if __name__ == "__main__":
-    MODEL = "vilt"  # vilt or blip2
+    MODEL = "blip2"  # vilt or blip2 or llava
     FRAME_STRIDE = 100  # process every N-th frame
 
     seq = 10
