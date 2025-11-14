@@ -346,35 +346,44 @@ def main(svo_input_path, output_dir, model_name, prompt_preset, frame_stride):
                         
                         for question_data in prompts:
                             question_id = question_data['id']
-                            full_prompt = prompt_manager.get_full_prompt(question_data)
+                            question_prompt = question_data['text']
+                            full_prompt = prompt_manager.get_full_prompt(question_data) # question with context
                             short_label = prompt_manager.get_short_label(question_data)
 
                             # Process question
-                            answer_text, confidence = vqa_model.process_question(image, full_prompt)
-                            
+                            try:
+                                answer_text, confidence = vqa_model.process_question(image, full_prompt)
+                            except Exception as e:
+                                print(f"Error processing question '{question_id}': {e}")
+                                try:
+                                    answer_text, confidence = vqa_model.process_question(image, question_prompt)
+                                except Exception as e2:
+                                    print(f"Error processing question '{question_id}' with basic prompt")
+
                             # Store for display
-                            answers_dict[short_label] = {
-                                'answer': answer_text,
-                                'confidence': confidence
-                            }
-                            
-                            # Log result
-                            result_obj = {
-                                "frame": int(frame),
-                                "question_id": question_id,
-                                "question": full_prompt,
-                                "answer": answer_text,
-                                "confidence": confidence,
-                                "model": model_name
-                            }
-                            ans_f.write(json.dumps(result_obj) + "\n")
-                            ans_f.flush()
-                            
-                            # Print to console
-                            if confidence is not None:
-                                print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n\tConfidence: ({confidence:.2f})\n")
-                            else:
-                                print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n")
+                            if answer_text is not None:
+                                answers_dict[short_label] = {
+                                    'answer': answer_text,
+                                    'confidence': confidence
+                                }
+                                
+                                # Log result
+                                result_obj = {
+                                    "frame": int(frame),
+                                    "question_id": question_id,
+                                    "question": full_prompt,
+                                    "answer": answer_text,
+                                    "confidence": confidence,
+                                    "model": model_name
+                                }
+                                ans_f.write(json.dumps(result_obj) + "\n")
+                                ans_f.flush()
+                                
+                                # Print to console
+                                if confidence is not None:
+                                    print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n\tConfidence: ({confidence:.2f})\n")
+                                else:
+                                    print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n")
                         
                         print(f"{'='*70}")
                         print("Press any key to continue...")
@@ -401,10 +410,10 @@ def main(svo_input_path, output_dir, model_name, prompt_preset, frame_stride):
 
 if __name__ == "__main__":
     # ============ CONFIGURATION ============
-    MODEL = "instructblip"  # Options: vilt, blip2, blip2-large, llava, instructblip
-    PROMPT_PRESET = "crossing_focused"  # Options: safety_critical, full_assessment, environment_only, crossing_focused
+    MODEL = "vilt"  # Options: vilt, blip2, blip2-large, llava, instructblip
+    PROMPT_PRESET = "boolean_only"  # Options: safety_critical, full_assessment, environment_only, crossing_focused, boolean_only
     FRAME_STRIDE = 100  # Process every N-th frame
-    SEQUENCE = 10
+    SEQUENCE = 15
     # =======================================
     
     print(f"="*70)
@@ -424,3 +433,4 @@ if __name__ == "__main__":
 
 # Improve general instruction to specify the egomotion. 
 # Add multiple choice in the prompt configuration.
+# Traffic related q

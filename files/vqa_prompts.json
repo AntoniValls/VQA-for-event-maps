@@ -727,6 +727,33 @@
         "q_vehicle_traffic_nearest_state",
         "q_crossing_overall_safe_plan"
       ]
-    }
+    },
+    "boolean_only": {
+    "name": "Boolean Questions Only",
+    "description": "All questions with Yes/No answers for quick assessment",
+    "enabled_questions": [
+      "q_path_obstacle_ahead_present_5m",
+      "q_path_obstacle_overhead",
+      "q_env_sidewalk_feature_present",
+      "q_env_sidewalk_feature_hazard",
+      "q_path_surface_hazard",
+      "q_env_stairs_present",
+      "q_ped_signal_present_identifiable",
+      "q_crossing_button_visible",
+      "q_vehicle_traffic_present",
+      "q_crossing_plan_based_on_traffic",
+      "q_other_peds_crossing",
+      "q_env_crowding_plan",
+      "q_cyclist_present",
+      "q_env_construction_present",
+      "q_path_alternative_visible",
+      "q_env_visibility_lighting",
+      "q_env_visibility_weather",
+      "q_env_outdoor_seating_encroachment",
+      "q_env_street_sign_visible",
+      "q_poi_store_visible_closest",
+      "q_poi_store_entrance_plan_accessible"
+    ]
+  }
   }
 }
