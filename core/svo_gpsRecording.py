@@ -13,8 +13,8 @@ import time
 from typing import Optional
 
 from config.settings import CFG
-from GPS_utils import GPSCoordinate, GPSLogger, GPSWebSocketClient
-from inout.utils import create_run_dir
+from utils.GPS_utils import GPSCoordinate, GPSLogger, GPSWebSocketClient
+from utils.utils import create_run_dir
 
 # Simple thread-safe frame counter ----------
 import threading

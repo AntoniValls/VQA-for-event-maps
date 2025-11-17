@@ -1,8 +1,4 @@
 .venv/
 __pycache__/
-data/images/
-data/svo/
-data/vqa_outputs/
-data/recordings/
-vqa_outputs/
-playground/
+data/
+config/smartphone_ip_address.txt
