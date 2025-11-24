@@ -1,759 +1,664 @@
 {
   "metadata": {
-    "version": "1.0",
-    "description": "Comprehensive VQA Question List for Pedestrian Navigation",
-    "base_context": "You are an expert at detecting pedestrian obstacles for people with low vision.",
-    "date_created": "2025-11-10"
+    "version": "2.0",
+    "description": "Hierarchical VQA Question System for Pedestrian Navigation",
+    "base_context": "You are an expert at detecting pedestrian obstacles for people with low vision. Answer only with Yes or No.",
+    "date_created": "2025-11-24"
   },
   "prompt_categories": {
-    "immediate_path": {
-      "name": "Immediate Path Assessment",
-      "description": "Assessment of the immediate forward path (approx. next 5 meters)",
+    "level_1_primary": {
+      "name": "Level 1: Primary Scene Assessment",
+      "description": "Core questions asked for every frame - trigger conditional questions",
       "questions": [
         {
-          "id": "q_path_obstacle_ahead_present_5m",
-          "text": "Is any object, person, or surface feature present on the immediate forward path (approx. next 5 meters) that requires the pedestrian to stop or significantly change course?",
-          "topic": "Navigational Safety - Forward Path",
+          "id": "q_crossing_nearby",
+          "text": "Is there a street crossing within the next 10 meters?",
+          "topic": "Crossing Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "instructions": "Focus only on the ground path directly ahead for ~5m. Identify anything that physically blocks or forces a major deviation.",
-          "short_label": "Obstacle Ahead",
+          "short_label": "Crossing Nearby",
           "enabled": true
         },
         {
-          "id": "q_path_obstacle_ahead_closest_class",
-          "text": "What type is the primary obstacle (within 5m)?",
-          "topic": "Object Identification",
-          "type": "multiple_choice",
-          "choices": [
-            "Pole / Signpost / Bollard",
-            "Trash Can / Street Furniture",
-            "Person (Stationary)",
-            "Person (Moving)",
-            "Parked Vehicle / Bicycle / Scooter",
-            "Construction Barrier / Debris",
-            "Low/Overhanging Vegetation",
-            "Unexpected Curb / Step / Drop-off",
-            "Significant Hole / Grate / Uneven Surface",
-            "Puddle / Standing Water",
-            "Animal",
-            "Other Obstacle",
-            "Cannot Determine Type"
-          ],
-          "dependency": "q_path_obstacle_ahead_present_5m",
-          "short_label": "Obstacle Type",
-          "enabled": true
-        },
-        {
-          "id": "q_spatial_primary_obstacle_clock_dir",
-          "text": "What is the approximate clock-face direction of the primary path obstacle?",
-          "topic": "Environment - Spatial Understanding",
-          "type": "multiple_choice",
-          "choices": [
-            "12 o'clock (Directly Ahead)",
-            "1-2 o'clock",
-            "3 o'clock (Directly Right)",
-            "4-5 o'clock",
-            "6 o'clock (Directly Behind)",
-            "7-8 o'clock",
-            "9 o'clock (Directly Left)",
-            "10-11 o'clock",
-            "Not Applicable",
-            "Cannot Determine"
-          ],
-          "dependency": "q_path_obstacle_ahead_present_5m",
-          "short_label": "Obstacle Direction",
-          "enabled": true
-        },
-        {
-          "id": "q_path_obstacle_ahead_plan",
-          "text": "What is the necessary action to navigate past this obstacle (within 5m)?",
-          "topic": "Navigational Planning",
-          "type": "multiple_choice",
-          "choices": [
-            "Deviate Left (clear path exists)",
-            "Deviate Right (clear path exists)",
-            "Stop and Wait",
-            "Step Over Carefully",
-            "Path Blocked - Requires Significant Reroute/Turn",
-            "Cannot Determine Safe Action"
-          ],
-          "dependency": "q_path_obstacle_ahead_present_5m",
-          "short_label": "Action Plan",
-          "enabled": true
-        },
-        {
-          "id": "q_path_obstacle_overhead",
-          "text": "Is there a low-hanging overhead obstruction (e.g., tree branch, awning, sign) potentially impacting head clearance above the immediate path?",
-          "topic": "Navigational Safety - Overhead",
-          "type": "boolean",
-          "choices": ["Yes", "No", "Cannot Determine"],
-          "short_label": "Overhead Hazard",
-          "enabled": true
-        }
-      ]
-    },
-    "environment_path": {
-      "name": "Environment & Path Characteristics",
-      "description": "Assessment of the walking environment and path features",
-      "questions": [
-        {
-          "id": "q_env_path_width_assessment",
-          "text": "What is the approximate clear walking path width available to the pedestrian?",
-          "topic": "Environment - Accessibility / Width",
-          "type": "multiple_choice",
-          "choices": [
-            "Narrow (~1 person wide)",
-            "Adequate (~1.5-2 people wide)",
-            "Wide (2+ people can easily pass)"
-          ],
-          "short_label": "Path Width",
-          "enabled": true
-        },
-        {
-          "id": "q_env_sidewalk_feature_present",
-          "text": "Are common sidewalk features (e.g., tree pits, utility covers, grates) OR side encroachments (e.g., sign base, parked car edge, wall nearby) present within or immediately beside the walking area?",
-          "topic": "Environment - Sidewalk Features",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "short_label": "Sidewalk Features",
-          "enabled": true
-        },
-        {
-          "id": "q_env_sidewalk_feature_type",
-          "text": "What is the primary type of feature/encroachment observed?",
-          "topic": "Environment - Sidewalk Features",
-          "type": "multiple_choice",
-          "choices": [
-            "Tree Pit/Cutout",
-            "Utility Cover/Access Panel",
-            "Drainage Grate",
-            "Cellar Door/Basement Access",
-            "Signpost Base / Pole Base",
-            "Parked Vehicle/Bike/Scooter Edge",
-            "Building Wall/Fence Edge",
-            "Other Embedded/Adjacent Feature",
-            "Multiple Types Present",
-            "Cannot Determine"
-          ],
-          "dependency": "q_env_sidewalk_feature_present",
-          "short_label": "Feature Type",
-          "enabled": true
-        },
-        {
-          "id": "q_env_sidewalk_feature_hazard",
-          "text": "Does this feature/encroachment appear uneven, recessed, broken, or pose a potential trip/bump hazard?",
-          "topic": "Environment - Sidewalk Features / Hazard",
-          "type": "boolean",
-          "choices": ["Yes (Poses Hazard)", "No (Appears Safe)"],
-          "dependency": "q_env_sidewalk_feature_present",
-          "short_label": "Feature Hazard",
-          "enabled": true
-        },
-        {
-          "id": "q_path_surface_type",
-          "text": "What is the primary surface material of the immediate walking path?",
-          "topic": "Environment - Surface",
-          "type": "multiple_choice",
-          "choices": [
-            "Concrete / Pavement",
-            "Asphalt",
-            "Paving Stones / Bricks",
-            "Gravel / Loose",
-            "Dirt / Grass / Packed Earth",
-            "Tactile Paving",
-            "Metal Grate",
-            "Indoor",
-            "Mixed / Transition",
-            "Cannot Determine"
-          ],
-          "short_label": "Surface Type",
-          "enabled": true
-        },
-        {
-          "id": "q_path_surface_hazard",
-          "text": "Is there a condition on the surface that poses a clear hazard (slip, trip, wetness)?",
-          "topic": "Environment - Surface",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "short_label": "Surface Hazard",
-          "enabled": true
-        },
-        {
-          "id": "q_path_surface_hazard_type",
-          "text": "What is the primary hazard type?",
-          "topic": "Environment - Surface",
-          "type": "multiple_choice",
-          "choices": [
-            "Wet / Slippery",
-            "Uneven / Cracked / Hole / Grate",
-            "Icy / Snowy",
-            "Loose Debris / Thick Wet Leaves",
-            "Under Construction / Dug up",
-            "Other Hazard",
-            "Cannot Determine"
-          ],
-          "dependency": "q_path_surface_hazard",
-          "short_label": "Hazard Type",
-          "enabled": true
-        },
-        {
-          "id": "q_path_surface_hazard_plan",
-          "text": "What action is advised due to this surface hazard?",
-          "topic": "Navigational Planning",
-          "type": "multiple_choice",
-          "choices": [
-            "Proceed with Caution",
-            "Avoid Specific Area",
-            "Stop if Unsafe/Unclear",
-            "No Action Needed (Minor)",
-            "Cannot Determine Safe Action"
-          ],
-          "dependency": "q_path_surface_hazard",
-          "short_label": "Hazard Action",
-          "enabled": true
-        },
-        {
-          "id": "q_path_edge_definition",
-          "text": "How is the edge of the path (away from buildings) defined?",
-          "topic": "Environment - Path Edge",
-          "type": "multiple_choice",
-          "choices": [
-            "Distinct Curb (Low)",
-            "Distinct Curb (Medium)",
-            "Distinct Curb (High)",
-            "Sloped Edge / Beveled Curb",
-            "Flush with Grass/Dirt",
-            "Flush with Road Surface",
-            "Wall / Fence",
-            "Edge Not Visible"
-          ],
-          "short_label": "Path Edge",
-          "enabled": true
-        },
-        {
-          "id": "q_env_stairs_present",
-          "text": "Are stairs (a flight of multiple steps) visible leading up or down from the current walking path?",
-          "topic": "Environment - Vertical Changes",
+          "id": "q_stairs_visible",
+          "text": "Are stairs visible on the current path?",
+          "topic": "Stairs Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "short_label": "Stairs Present",
           "enabled": true
         },
         {
-          "id": "q_env_stairs_location_plan",
-          "text": "Do the stairs block the forward path, offer an alternative path, or lead away from the path?",
-          "topic": "Environment - Vertical Changes / Planning",
-          "type": "multiple_choice",
-          "choices": [
-            "Block Forward Path",
-            "Offer Alternative Path",
-            "Lead Away from Path",
-            "Cannot Determine Relevance"
-          ],
-          "dependency": "q_env_stairs_present",
-          "short_label": "Stairs Impact",
-          "enabled": true
-        }
-      ]
-    },
-    "street_crossing": {
-      "name": "Street Crossing Assessment",
-      "description": "Assessment of street crossing scenario and traffic control",
-      "questions": [
-        {
-          "id": "q_crossing_approach_state",
-          "text": "What is the pedestrian's current state relative to a potential street crossing location?",
-          "topic": "Crossing - Scenario",
-          "type": "multiple_choice",
-          "choices": [
-            "At Curb/Edge (Ready to Assess Crossing)",
-            "Approaching Crossing Point (within 5m)",
-            "Actively Crossing Street",
-            "Near Crossing Area (Not Positioned to Cross)",
-            "Not Near a Crossing"
-          ],
-          "short_label": "Crossing State",
-          "enabled": true
-        },
-        {
-          "id": "q_crossing_curb_access",
-          "text": "What type of curb access is present at this crossing point?",
-          "topic": "Crossing - Accessibility",
-          "type": "multiple_choice",
-          "choices": [
-            "Curb Ramp (with tactile paving)",
-            "Curb Ramp (no tactile paving)",
-            "Flush / Level with street",
-            "Low curb",
-            "High curb",
-            "Stairs",
-            "Not Visible / Cannot Determine"
-          ],
-          "dependency": "q_crossing_approach_state",
-          "short_label": "Curb Access",
-          "enabled": true
-        },
-        {
-          "id": "q_ped_signal_present_identifiable",
-          "text": "Is a pedestrian signal head present and potentially identifiable for this crossing?",
-          "topic": "Crossing - Traffic Control",
-          "type": "boolean",
-          "choices": ["Yes", "No", "Not Visible"],
-          "dependency": "q_crossing_approach_state",
-          "short_label": "Ped Signal",
-          "enabled": true
-        },
-        {
-          "id": "q_ped_signal_visibility_quality",
-          "text": "How clearly visible is the state of the pedestrian signal?",
-          "topic": "Crossing - Traffic Control / Visibility",
-          "type": "multiple_choice",
-          "choices": [
-            "Clearly Visible",
-            "Partially Obscured",
-            "Blurry/Obscured/Too Far"
-          ],
-          "dependency": "q_ped_signal_present_identifiable",
-          "short_label": "Signal Visibility",
-          "enabled": true
-        },
-        {
-          "id": "q_ped_signal_displayed_visuals",
-          "text": "What is the visually displayed symbol/color/state on the pedestrian signal?",
-          "topic": "Crossing - Traffic Control / Perception",
-          "type": "multiple_choice",
-          "choices": [
-            "Clear Walk Symbol (Walking Person)",
-            "Clear Don't Walk Symbol (Hand/Solid)",
-            "Flashing Don't Walk / Hand Symbol",
-            "Visible Countdown Timer",
-            "Visible White/Lit Symbol (Shape Unclear)",
-            "Visible Red/Orange Symbol (Shape Unclear)",
-            "Signal Appears Off/Dark",
-            "Cannot Determine Visually"
-          ],
-          "dependency": "q_ped_signal_present_identifiable",
-          "short_label": "Signal State",
-          "enabled": true
-        },
-        {
-          "id": "q_crossing_button_visible",
-          "text": "Is a pedestrian signal activation button visible near the crossing point?",
-          "topic": "Crossing - Accessibility / Control",
-          "type": "boolean",
-          "choices": ["Yes", "No", "Cannot Determine"],
-          "dependency": "q_crossing_approach_state",
-          "short_label": "Button Visible",
-          "enabled": true
-        },
-        {
-          "id": "q_vehicle_traffic_present",
-          "text": "Are there any vehicles currently moving towards or stopped within the lanes to be crossed?",
-          "topic": "Crossing - Traffic",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_crossing_approach_state",
-          "short_label": "Traffic Present",
-          "enabled": true
-        },
-        {
-          "id": "q_vehicle_traffic_nearest_state",
-          "text": "What is the observed state of the NEAREST vehicle in a potentially conflicting lane?",
-          "topic": "Crossing - Traffic",
-          "type": "multiple_choice",
-          "choices": [
-            "Stopped",
-            "Approaching (Actively Slowing/Yielding)",
-            "Approaching (Not Yielding/Maintaining Speed)",
-            "Just Passed",
-            "Distant",
-            "Cannot Determine State"
-          ],
-          "dependency": "q_vehicle_traffic_present",
-          "short_label": "Vehicle State",
-          "enabled": true
-        },
-        {
-          "id": "q_crossing_plan_based_on_traffic",
-          "text": "Based ONLY on the nearest vehicle's state, should the pedestrian wait?",
-          "topic": "Crossing - Planning",
-          "type": "boolean",
-          "choices": ["Yes (Wait)", "No (Safe)"],
-          "dependency": "q_vehicle_traffic_present",
-          "short_label": "Wait for Traffic",
-          "enabled": true
-        },
-        {
-          "id": "q_other_peds_crossing",
-          "text": "Are other pedestrians currently walking within the street crossing area?",
-          "topic": "Crossing - Scenario",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_crossing_approach_state",
-          "short_label": "Others Crossing",
-          "enabled": true
-        },
-        {
-          "id": "q_crossing_overall_safe_plan",
-          "text": "Considering pedestrian signal AND traffic, is it safe to START crossing now?",
-          "topic": "Crossing - Planning",
-          "type": "multiple_choice",
-          "choices": [
-            "Yes (Walk Symbol + Traffic Safe)",
-            "Yes (No Signal + Traffic Safe)",
-            "No (Wait for Walk Signal)",
-            "No (Wait for Traffic)",
-            "No (Don't Walk Signal)",
-            "No (Clearly Unsafe)",
-            "Cannot Determine Safety"
-          ],
-          "dependency": "q_crossing_approach_state",
-          "short_label": "Safe to Cross",
-          "enabled": true
-        }
-      ]
-    },
-    "surrounding_environment": {
-      "name": "Surrounding Environment & Dynamic Actors",
-      "description": "Assessment of crowding, cyclists, construction, and visibility",
-      "questions": [
-        {
-          "id": "q_env_crowding_level",
-          "text": "What is the level of pedestrian crowding impacting immediate movement?",
-          "topic": "Environment - Social",
-          "type": "multiple_choice",
-          "choices": [
-            "None/Low (0-2 people)",
-            "Moderate (3-5 people)",
-            "Crowded (6+ people)"
-          ],
-          "short_label": "Crowding",
-          "enabled": true
-        },
-        {
-          "id": "q_env_crowding_plan",
-          "text": "Does this level of crowding require slowing down or increased caution?",
-          "topic": "Navigational Planning",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_env_crowding_level",
-          "short_label": "Crowding Caution",
-          "enabled": true
-        },
-        {
-          "id": "q_bike_lane_present_location",
-          "text": "Is a marked bicycle lane visible, and if so, where relative to the pedestrian path?",
-          "topic": "Environment - Bike Lanes",
-          "type": "multiple_choice",
-          "choices": [
-            "No Bike Lane Visible",
-            "Yes, Adjacent Left",
-            "Yes, Adjacent Right",
-            "Yes, Integrated with Path",
-            "Yes, Crossing Path Ahead",
-            "Cannot Determine"
-          ],
-          "short_label": "Bike Lane",
-          "enabled": true
-        },
-        {
-          "id": "q_cyclist_present",
-          "text": "Is a cyclist present within ~5-10 meters or potentially interacting with the path?",
-          "topic": "Dynamic Actors - Cyclists",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "short_label": "Cyclist Present",
-          "enabled": true
-        },
-        {
-          "id": "q_cyclist_location_conflict",
-          "text": "Where is the cyclist located and is their path likely to conflict?",
-          "topic": "Dynamic Actors - Cyclists / Conflict",
-          "type": "multiple_choice",
-          "choices": [
-            "Approaching From Front (Potential Conflict)",
-            "In Adjacent Bike Lane (No Conflict)",
-            "In Roadway (Potential Conflict)",
-            "Passing (No Conflict)",
-            "Stationary (No Conflict)",
-            "Crossing Path Ahead (Yes Conflict)",
-            "Unclear Path/Conflict"
-          ],
-          "dependency": "q_cyclist_present",
-          "short_label": "Cyclist Conflict",
-          "enabled": true
-        },
-        {
-          "id": "q_cyclist_plan",
-          "text": "If potential conflict identified, what action should pedestrian take?",
-          "topic": "Navigational Planning",
-          "type": "multiple_choice",
-          "choices": [
-            "Stop/Yield",
-            "Adjust Speed/Position Slightly",
-            "Maintain Course & Be Aware",
-            "Cannot Determine Safe Action"
-          ],
-          "dependency": "q_cyclist_location_conflict",
-          "short_label": "Cyclist Action",
-          "enabled": true
-        },
-        {
-          "id": "q_env_construction_present",
-          "text": "Is active construction or pathway detour visible?",
-          "topic": "Environment - Hazards",
+          "id": "q_construction_visible",
+          "text": "Is construction or a pathway detour visible?",
+          "topic": "Construction Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "short_label": "Construction",
           "enabled": true
         },
         {
-          "id": "q_env_construction_plan",
-          "text": "How should the pedestrian navigate the construction area?",
-          "topic": "Navigational Planning",
-          "type": "multiple_choice",
-          "choices": [
-            "Follow marked detour signs/path",
-            "Pass carefully through narrowed area",
-            "Seek alternative route (path blocked)",
-            "No Clear Safe Path Visible"
-          ],
-          "dependency": "q_env_construction_present",
-          "short_label": "Construction Nav",
-          "enabled": true
-        },
-        {
-          "id": "q_path_alternative_visible",
-          "text": "If the primary path is blocked, is a clear alternative safe path visible?",
-          "topic": "Navigational Planning",
-          "type": "boolean",
-          "choices": ["Yes", "No", "Cannot Determine"],
-          "short_label": "Alternative Path",
-          "enabled": true
-        },
-        {
-          "id": "q_env_visibility_lighting",
-          "text": "Is visibility significantly reduced due to low light, glare, or shadows?",
-          "topic": "Environment - Visibility",
+          "id": "q_obstacle_blocking",
+          "text": "Is any obstacle blocking the direct path ahead?",
+          "topic": "Obstacle Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "short_label": "Light Visibility",
+          "short_label": "Obstacle Ahead",
           "enabled": true
         },
         {
-          "id": "q_env_visibility_weather",
-          "text": "Are current weather conditions reducing visibility OR making surfaces hazardous?",
-          "topic": "Environment - Visibility / Hazard",
+          "id": "q_pedestrians_present",
+          "text": "Are multiple pedestrians visible in the walking area?",
+          "topic": "Crowding Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "short_label": "Weather Impact",
+          "short_label": "Pedestrians Present",
           "enabled": true
         },
         {
-          "id": "q_env_outdoor_seating_encroachment",
-          "text": "Is outdoor seating present and encroaching onto the main walking path?",
-          "topic": "Environment - Social / Obstacle",
+          "id": "q_vehicle_nearby",
+          "text": "Is any vehicle within 10 meters of the path?",
+          "topic": "Vehicle Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "short_label": "Seating Encroach",
+          "short_label": "Vehicle Nearby",
+          "enabled": true
+        },
+        {
+          "id": "q_surface_hazardous",
+          "text": "Is the path surface hazardous (wet, broken, or uneven)?",
+          "topic": "Surface Hazard Detection",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "short_label": "Surface Hazard",
+          "enabled": true
+        },
+        {
+          "id": "q_visibility_reduced",
+          "text": "Is visibility reduced (darkness, glare, or shadows)?",
+          "topic": "Visibility Detection",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "short_label": "Reduced Visibility",
           "enabled": true
         }
       ]
     },
-    "points_of_interest": {
-      "name": "Points of Interest",
-      "description": "Assessment of nearby stores and landmarks",
+    "crossing_details": {
+      "name": "Crossing Questions",
+      "description": "Conditional questions when crossing is detected",
       "questions": [
         {
-          "id": "q_env_street_sign_visible",
-          "text": "Is a street name sign visible in the current view?",
-          "topic": "Environment - Navigation Aids",
+          "id": "q_crossing_signal_present",
+          "text": "Is a pedestrian signal present at this crossing?",
+          "topic": "Crossing - Signal",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "short_label": "Street Sign",
+          "dependency": "q_crossing_nearby",
+          "short_label": "Signal Present",
           "enabled": true
         },
         {
-          "id": "q_env_street_sign_text",
-          "text": "If a street sign is visible, is the primary text (street name) readable?",
-          "topic": "Environment - Navigation Aids / OCR",
-          "type": "multiple_choice",
-          "choices": [
-            "Yes (Transcribe Text)",
-            "No (Unreadable)",
-            "Not Applicable"
-          ],
-          "dependency": "q_env_street_sign_visible",
-          "short_label": "Street Name",
-          "enabled": true
-        },
-        {
-          "id": "q_poi_store_visible_closest",
-          "text": "Is a store entrance clearly visible nearby?",
-          "topic": "Points of Interest",
+          "id": "q_crossing_signal_red_green",
+          "text": "Is the pedestrian signal showing red or green?",
+          "topic": "Crossing - Signal State",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "short_label": "Store Visible",
+          "dependency": "q_crossing_signal_present",
+          "short_label": "Signal Red/Green",
           "enabled": true
         },
         {
-          "id": "q_poi_store_entrance_type",
-          "text": "What type of entrance does the selected store have?",
-          "topic": "Points of Interest - Accessibility",
-          "type": "multiple_choice",
-          "choices": [
-            "Level with Automatic Door",
-            "Level with Manual Door",
-            "Ramp Access",
-            "Single Step at Entrance",
-            "Multiple Steps at Entrance",
-            "Revolving Door",
-            "Cannot Determine / Obscured"
-          ],
-          "dependency": "q_poi_store_visible_closest",
-          "short_label": "Entrance Type",
-          "enabled": true
-        },
-        {
-          "id": "q_poi_store_type",
-          "text": "What general type of store or service does the selected store appear to be?",
-          "topic": "Points of Interest",
-          "type": "multiple_choice",
-          "choices": [
-            "Food/Grocery/Convenience",
-            "Cafe/Restaurant/Bar",
-            "Pharmacy/Health",
-            "Clothing/Retail (General)",
-            "Bank/Office/Service",
-            "Public Building",
-            "Other",
-            "Cannot Determine"
-          ],
-          "dependency": "q_poi_store_visible_closest",
-          "short_label": "Store Type",
-          "enabled": true
-        },
-        {
-          "id": "q_poi_store_name",
-          "text": "Is a store name or primary text visible and readable on the sign?",
-          "topic": "Points of Interest / OCR",
-          "type": "multiple_choice",
-          "choices": [
-            "Yes (Transcribe Text)",
-            "No (Unreadable)",
-            "No Sign Visible",
-            "Not Applicable"
-          ],
-          "dependency": "q_poi_store_visible_closest",
-          "short_label": "Store Name",
-          "enabled": true
-        },
-        {
-          "id": "q_spatial_store_entrance_clock_dir",
-          "text": "What is the approximate clock-face direction of the store entrance?",
-          "topic": "Environment - Spatial Understanding",
-          "type": "multiple_choice",
-          "choices": [
-            "12 o'clock (Directly Ahead)",
-            "1-2 o'clock",
-            "3 o'clock (Directly Right)",
-            "4-5 o'clock",
-            "6 o'clock (Directly Behind)",
-            "7-8 o'clock",
-            "9 o'clock (Directly Left)",
-            "10-11 o'clock",
-            "Not Applicable",
-            "Cannot Determine"
-          ],
-          "dependency": "q_poi_store_visible_closest",
-          "short_label": "Store Direction",
-          "enabled": true
-        },
-        {
-          "id": "q_poi_store_entrance_plan_accessible",
-          "text": "Does the Store Entrance appear accessible without navigating steps?",
-          "topic": "Points of Interest - Planning",
+          "id": "q_crossing_vehicles_present",
+          "text": "Are vehicles currently in the crossing lanes?",
+          "topic": "Crossing - Traffic",
           "type": "boolean",
-          "choices": ["Yes (Level/Ramp)", "No (Steps detected)"],
-          "dependency": "q_poi_store_visible_closest",
-          "short_label": "Store Accessible",
+          "choices": ["Yes", "No"],
+          "dependency": "q_crossing_nearby",
+          "short_label": "Vehicles in Lanes",
+          "enabled": true
+        },
+        {
+          "id": "q_crossing_vehicles_moving",
+          "text": "Are the vehicles moving or stopped?",
+          "topic": "Crossing - Traffic State",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_crossing_vehicles_present",
+          "short_label": "Vehicles Moving",
+          "enabled": true
+        },
+        {
+          "id": "q_crossing_marked",
+          "text": "Is the crossing marked with painted lines?",
+          "topic": "Crossing - Infrastructure",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_crossing_nearby",
+          "short_label": "Crossing Marked",
+          "enabled": true
+        },
+        {
+          "id": "q_crossing_others_waiting",
+          "text": "Are other pedestrians waiting or crossing?",
+          "topic": "Crossing - Social",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_crossing_nearby",
+          "short_label": "Others Crossing",
+          "enabled": true
+        }
+      ]
+    },
+    "stairs_details": {
+      "name": "Stairs Questions",
+      "description": "Conditional questions when stairs are detected",
+      "questions": [
+        {
+          "id": "q_stairs_upward",
+          "text": "Do the stairs lead upward or downward?",
+          "topic": "Stairs - Direction",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_stairs_visible",
+          "short_label": "Stairs Upward",
+          "enabled": true
+        },
+        {
+          "id": "q_stairs_handrail",
+          "text": "Is there a handrail present?",
+          "topic": "Stairs - Safety",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_stairs_visible",
+          "short_label": "Handrail Present",
+          "enabled": true
+        },
+        {
+          "id": "q_stairs_only_option",
+          "text": "Are the stairs the only path option visible?",
+          "topic": "Stairs - Navigation",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_stairs_visible",
+          "short_label": "Stairs Only Option",
+          "enabled": true
+        }
+      ]
+    },
+    "construction_details": {
+      "name": "Construction Questions",
+      "description": "Conditional questions when construction is detected",
+      "questions": [
+        {
+          "id": "q_construction_barriers",
+          "text": "Are barriers or cones blocking the path?",
+          "topic": "Construction - Blockage",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_construction_visible",
+          "short_label": "Barriers Present",
+          "enabled": true
+        },
+        {
+          "id": "q_construction_equipment",
+          "text": "Is construction equipment visible?",
+          "topic": "Construction - Equipment",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_construction_visible",
+          "short_label": "Equipment Visible",
+          "enabled": true
+        },
+        {
+          "id": "q_construction_alternative_marked",
+          "text": "Is an alternative path clearly marked?",
+          "topic": "Construction - Navigation",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_construction_visible",
+          "short_label": "Alternative Marked",
+          "enabled": true
+        }
+      ]
+    },
+    "obstacle_details": {
+      "name": "Obstacle Questions",
+      "description": "Conditional questions when obstacle is detected",
+      "questions": [
+        {
+          "id": "q_obstacle_is_person",
+          "text": "Is the obstacle a person?",
+          "topic": "Obstacle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Obstacle Person",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_is_object",
+          "text": "Is the obstacle an object?",
+          "topic": "Obstacle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Obstacle Object",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_is_vehicle",
+          "text": "Is the obstacle a vehicle?",
+          "topic": "Obstacle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Obstacle Vehicle",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_blocks_half",
+          "text": "Does the obstacle block more than half the path width?",
+          "topic": "Obstacle - Severity",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Blocks Half Path",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_space_around",
+          "text": "Is there clear space to walk around the obstacle?",
+          "topic": "Obstacle - Navigation",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Space Around",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_seating",
+          "text": "Is outdoor seating encroaching onto the walkway?",
+          "topic": "Obstacle - Seating",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Seating Encroach",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_overhead",
+          "text": "Is there a low-hanging branch, awning, or sign overhead?",
+          "topic": "Obstacle - Overhead",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Overhead Hazard",
+          "enabled": true
+        }
+      ]
+    },
+    "crowding_details": {
+      "name": "Crowding Questions",
+      "description": "Conditional questions when pedestrians are detected",
+      "questions": [
+        {
+          "id": "q_crowding_more_than_five",
+          "text": "Are more than 5 pedestrians visible ahead?",
+          "topic": "Crowding - Density",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_pedestrians_present",
+          "short_label": "5+ Pedestrians",
+          "enabled": true
+        },
+        {
+          "id": "q_crowding_same_direction",
+          "text": "Are pedestrians moving in the same direction?",
+          "topic": "Crowding - Flow",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_pedestrians_present",
+          "short_label": "Same Direction",
+          "enabled": true
+        },
+        {
+          "id": "q_crowding_path_reduced",
+          "text": "Is the path width reduced due to crowding?",
+          "topic": "Crowding - Impact",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_pedestrians_present",
+          "short_label": "Width Reduced",
+          "enabled": true
+        }
+      ]
+    },
+    "vehicle_details": {
+      "name": "Vehicle Questions",
+      "description": "Conditional questions when vehicle is detected",
+      "questions": [
+        {
+          "id": "q_vehicle_is_bicycle",
+          "text": "Is there a bicycle within 10 meters of the path?",
+          "topic": "Vehicle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_nearby",
+          "short_label": "Bicycle Present",
+          "enabled": true
+        },
+        {
+          "id": "q_vehicle_is_car_truck_bus",
+          "text": "Is there a car, truck or bus within 10 meters of the path?",
+          "topic": "Vehicle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_nearby",
+          "short_label": "Motor Vehicle",
+          "enabled": true
+        },
+        {
+          "id": "q_vehicle_is_motorcycle_scooter",
+          "text": "Is there a motorcycle or scooter within 10 meters of the path?",
+          "topic": "Vehicle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_nearby",
+          "short_label": "Two-Wheeler",
+          "enabled": true
+        },
+        {
+          "id": "q_bicycle_moving_toward",
+          "text": "Is the cyclist moving toward or away from the camera?",
+          "topic": "Vehicle - Bicycle Direction",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_bicycle",
+          "short_label": "Cyclist Approaching",
+          "enabled": true
+        },
+        {
+          "id": "q_bicycle_bike_lane",
+          "text": "Is the bicycle on a dedicated bike lane?",
+          "topic": "Vehicle - Bicycle Location",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_bicycle",
+          "short_label": "In Bike Lane",
+          "enabled": true
+        },
+        {
+          "id": "q_motor_vehicle_moving",
+          "text": "Is the vehicle moving or stationary?",
+          "topic": "Vehicle - Motor State",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_car_truck_bus",
+          "short_label": "Vehicle Moving",
+          "enabled": true
+        },
+        {
+          "id": "q_motor_vehicle_parked",
+          "text": "Is the vehicle parked or in traffic?",
+          "topic": "Vehicle - Motor State",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_car_truck_bus",
+          "short_label": "Vehicle Parked",
+          "enabled": true
+        },
+        {
+          "id": "q_motor_vehicle_blocking",
+          "text": "Is the vehicle blocking the pedestrian path?",
+          "topic": "Vehicle - Motor Impact",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_car_truck_bus",
+          "short_label": "Blocking Path",
+          "enabled": true
+        },
+        {
+          "id": "q_two_wheeler_within_5m",
+          "text": "Is the vehicle within 5 meters?",
+          "topic": "Vehicle - Two-Wheeler Distance",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_motorcycle_scooter",
+          "short_label": "Within 5m",
+          "enabled": true
+        },
+        {
+          "id": "q_two_wheeler_sidewalk_road",
+          "text": "Is the vehicle on the sidewalk or roadway?",
+          "topic": "Vehicle - Two-Wheeler Location",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_motorcycle_scooter",
+          "short_label": "On Sidewalk",
+          "enabled": true
+        },
+        {
+          "id": "q_two_wheeler_on_sidewalk",
+          "text": "Is the vehicle on the sidewalk?",
+          "topic": "Vehicle - Two-Wheeler Violation",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_motorcycle_scooter",
+          "short_label": "Sidewalk Violation",
+          "enabled": true
+        },
+        {
+          "id": "q_two_wheeler_motorized",
+          "text": "Is it a motorized scooter?",
+          "topic": "Vehicle - Two-Wheeler Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_motorcycle_scooter",
+          "short_label": "Motorized",
+          "enabled": true
+        }
+      ]
+    },
+    "surface_details": {
+      "name": "Surface Questions",
+      "description": "Conditional questions when surface hazard is detected",
+      "questions": [
+        {
+          "id": "q_surface_water_ice",
+          "text": "Is water or ice visible on the surface?",
+          "topic": "Surface - Wetness",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_surface_hazardous",
+          "short_label": "Water/Ice",
+          "enabled": true
+        },
+        {
+          "id": "q_surface_sloped",
+          "text": "Is the surface sloped or tilted?",
+          "topic": "Surface - Slope",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_surface_hazardous",
+          "short_label": "Sloped",
+          "enabled": true
+        },
+        {
+          "id": "q_surface_cracks_holes",
+          "text": "Are there cracks or holes in the pavement?",
+          "topic": "Surface - Damage",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_surface_hazardous",
+          "short_label": "Cracks/Holes",
+          "enabled": true
+        },
+        {
+          "id": "q_surface_overhead_hazard",
+          "text": "Is there a low-hanging branch, awning, or sign overhead?",
+          "topic": "Surface - Overhead",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_surface_hazardous",
+          "short_label": "Overhead",
+          "enabled": true
+        }
+      ]
+    },
+    "visibility_details": {
+      "name": "Visibility Questions",
+      "description": "Conditional questions when visibility is reduced",
+      "questions": [
+        {
+          "id": "q_visibility_nighttime",
+          "text": "Is it nighttime or dusk?",
+          "topic": "Visibility - Time",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_visibility_reduced",
+          "short_label": "Nighttime",
+          "enabled": true
+        },
+        {
+          "id": "q_visibility_glare",
+          "text": "Is direct sunlight causing glare?",
+          "topic": "Visibility - Glare",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_visibility_reduced",
+          "short_label": "Glare",
+          "enabled": true
+        },
+        {
+          "id": "q_visibility_shadows",
+          "text": "Are shadows covering the path ahead?",
+          "topic": "Visibility - Shadows",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_visibility_reduced",
+          "short_label": "Shadows",
           "enabled": true
         }
       ]
     }
   },
   "prompt_presets": {
-    "safety_critical": {
-      "name": "Safety Critical Only",
-      "description": "Essential safety questions for real-time navigation",
+    "level_1_only": {
+      "name": "Level 1 Questions Only",
+      "description": "Only primary scene assessment questions",
       "enabled_questions": [
-        "q_path_obstacle_ahead_present_5m",
-        "q_path_obstacle_ahead_closest_class",
-        "q_spatial_primary_obstacle_clock_dir",
-        "q_path_surface_hazard",
-        "q_crossing_approach_state",
-        "q_ped_signal_displayed_visuals",
-        "q_vehicle_traffic_present",
-        "q_crossing_overall_safe_plan"
+        "q_crossing_nearby",
+        "q_stairs_visible",
+        "q_construction_visible",
+        "q_obstacle_blocking",
+        "q_pedestrians_present",
+        "q_vehicle_nearby",
+        "q_surface_hazardous",
+        "q_visibility_reduced"
       ]
     },
-    "full_assessment": {
-      "name": "Full Assessment",
-      "description": "All enabled questions for comprehensive analysis",
+    "crossing": {
+      "name": "Crossing Assessment",
+      "description": "Level 1 + all crossing detail questions",
+      "enabled_questions": [
+        "q_crossing_nearby",
+        "q_crossing_signal_present",
+        "q_crossing_signal_red_green",
+        "q_crossing_vehicles_present",
+        "q_crossing_vehicles_moving",
+        "q_crossing_marked",
+        "q_crossing_others_waiting"
+      ]
+    },
+    "stairs": {
+      "name": "Stairs Assessment",
+      "description": "Level 1 + all stairs detail questions",
+      "enabled_questions": [
+        "q_stairs_visible",
+        "q_stairs_upward",
+        "q_stairs_handrail",
+        "q_stairs_only_option"
+      ]
+    },
+    "construction": {
+      "name": "Construction Assessment",
+      "description": "Level 1 + all construction detail questions",
+      "enabled_questions": [
+        "q_construction_visible",
+        "q_construction_barriers",
+        "q_construction_equipment",
+        "q_construction_alternative_marked"
+      ]
+    },
+    "obstacle": {
+      "name": "Obstacle Assessment",
+      "description": "Level 1 + all obstacle detail questions",
+      "enabled_questions": [
+        "q_obstacle_blocking",
+        "q_obstacle_is_person",
+        "q_obstacle_is_object",
+        "q_obstacle_is_vehicle",
+        "q_obstacle_blocks_half",
+        "q_obstacle_space_around",
+        "q_obstacle_seating",
+        "q_obstacle_overhead"
+      ]
+    },
+    "crowding": {
+      "name": "Crowding Assessment",
+      "description": "Level 1 + all crowding detail questions",
+      "enabled_questions": [
+        "q_pedestrians_present",
+        "q_crowding_more_than_five",
+        "q_crowding_same_direction",
+        "q_crowding_path_reduced"
+      ]
+    },
+    "vehicle": {
+      "name": "Vehicle Assessment",
+      "description": "Level 1 + all vehicle detail questions",
+      "enabled_questions": [
+        "q_vehicle_nearby",
+        "q_vehicle_is_bicycle",
+        "q_vehicle_is_car_truck_bus",
+        "q_vehicle_is_motorcycle_scooter",
+        "q_bicycle_moving_toward",
+        "q_bicycle_bike_lane",
+        "q_motor_vehicle_moving",
+        "q_motor_vehicle_parked",
+        "q_motor_vehicle_blocking",
+        "q_two_wheeler_within_5m",
+        "q_two_wheeler_sidewalk_road",
+        "q_two_wheeler_on_sidewalk",
+        "q_two_wheeler_motorized"
+      ]
+    },
+    "surface": {
+      "name": "Surface Assessment",
+      "description": "Level 1 + all surface hazard detail questions",
+      "enabled_questions": [
+        "q_surface_hazardous",
+        "q_surface_water_ice",
+        "q_surface_sloped",
+        "q_surface_cracks_holes",
+        "q_surface_overhead_hazard"
+      ]
+    },
+    "visibility": {
+      "name": "Visibility Assessment",
+      "description": "Level 1 + all visibility detail questions",
+      "enabled_questions": [
+        "q_visibility_reduced",
+        "q_visibility_nighttime",
+        "q_visibility_glare",
+        "q_visibility_shadows"
+      ]
+    },
+    "full_hierarchical": {
+      "name": "Full Hierarchical Assessment",
+      "description": "All questions - Level 1 triggers appropriate Level 2 questions",
       "enabled_questions": "all"
-    },
-    "environment_only": {
-      "name": "Environment Assessment",
-      "description": "Focus on environmental characteristics",
-      "enabled_questions": [
-        "q_env_path_width_assessment",
-        "q_path_surface_type",
-        "q_path_surface_hazard",
-        "q_env_crowding_level",
-        "q_env_visibility_lighting",
-        "q_env_visibility_weather"
-      ]
-    },
-    "crossing_focused": {
-      "name": "Street Crossing Focus",
-      "description": "Detailed crossing assessment",
-      "enabled_questions": [
-        "q_crossing_approach_state",
-        "q_crossing_curb_access",
-        "q_ped_signal_present_identifiable",
-        "q_ped_signal_displayed_visuals",
-        "q_vehicle_traffic_present",
-        "q_vehicle_traffic_nearest_state",
-        "q_crossing_overall_safe_plan"
-      ]
-    },
-    "boolean_only": {
-    "name": "Boolean Questions Only",
-    "description": "All questions with Yes/No answers for quick assessment",
-    "enabled_questions": [
-      "q_path_obstacle_ahead_present_5m",
-      "q_path_obstacle_overhead",
-      "q_env_sidewalk_feature_present",
-      "q_env_sidewalk_feature_hazard",
-      "q_path_surface_hazard",
-      "q_env_stairs_present",
-      "q_ped_signal_present_identifiable",
-      "q_crossing_button_visible",
-      "q_vehicle_traffic_present",
-      "q_crossing_plan_based_on_traffic",
-      "q_other_peds_crossing",
-      "q_env_crowding_plan",
-      "q_cyclist_present",
-      "q_env_construction_present",
-      "q_path_alternative_visible",
-      "q_env_visibility_lighting",
-      "q_env_visibility_weather",
-      "q_env_outdoor_seating_encroachment",
-      "q_env_street_sign_visible",
-      "q_poi_store_visible_closest",
-      "q_poi_store_entrance_plan_accessible"
-    ]
-  }
+    }
   }
 }

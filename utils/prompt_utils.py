@@ -13,7 +13,7 @@ Usage:
 import json
 import argparse
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 
 class PromptUtils:
@@ -192,7 +192,7 @@ def main():
     parser.add_argument('--preset', help="Preset name (for list-questions)")
     parser.add_argument('--description', help="Preset description (for create-preset)")
     parser.add_argument('--questions', help="Comma-separated question IDs (for create-preset)")
-    parser.add_argument('--json', default='vqa_prompts.json', help="Path to prompts JSON file")
+    parser.add_argument('--json', default='../inout/vqa_prompts.json', help="Path to prompts JSON file")
     
     args = parser.parse_args()
     

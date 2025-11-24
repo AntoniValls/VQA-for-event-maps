@@ -18,8 +18,139 @@ from core.vqaModel import VQAModel
 from viz.viz_utils import create_display_frame, generate_event_map
 
 
+def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name):
+    """
+    Process questions hierarchically: Level 1 first, then conditional Level 2 based on answers.
+    
+    Returns:
+        answers_dict: Dictionary of all answers for display
+        result_objects: List of result objects for logging
+    """
+    answers_dict = {}
+    result_objects = []
+    
+    # Reset answer history for new frame
+    prompt_manager.reset_answer_history()
+    
+    # Step 1: Process all Level 1 questions
+    initial_prompts = prompt_manager.get_initial_prompts()
+    
+    print(f"\n{'='*70}")
+    print(f"LEVEL 1 QUESTIONS ({len(initial_prompts)} questions)")
+    print(f"{'='*70}")
+    
+    for question_data in initial_prompts:
+        question_id = question_data['id']
+        question_prompt = question_data['text']
+        full_prompt = prompt_manager.get_full_prompt(question_data)
+        short_label = prompt_manager.get_short_label(question_data)
+        
+        # Process question
+        try:
+            answer_text, confidence = vqa_model.process_question(image, full_prompt)
+        except Exception as e:
+            print(f"Error processing question '{question_id}': {e}")
+            try:
+                answer_text, confidence = vqa_model.process_question(image, question_prompt)
+            except Exception as e2:
+                print(f"Error processing question '{question_id}' with basic prompt: {e2}")
+                answer_text, confidence = None, None
+        
+        # Store answer
+        if answer_text is not None:
+            answers_dict[short_label] = {
+                'answer': answer_text,
+                'confidence': confidence
+            }
+            
+            result_obj = {
+                "question_id": question_id,
+                "question": full_prompt,
+                "answer": answer_text,
+                "confidence": confidence,
+                "model": model_name,
+                "level": 1
+            }
+            result_objects.append(result_obj)
+            
+            # Print to console
+            if confidence is not None:
+                print(f"{short_label}: {answer_text} (conf: {confidence:.2f})")
+            else:
+                print(f"{short_label}: {answer_text}")
+    
+    # Step 2: Process Level 2 follow-up questions based on Level 1 answers
+    print(f"\n{'='*70}")
+    print(f"LEVEL 2 FOLLOW-UP QUESTIONS")
+    print(f"{'='*70}")
+    
+    followup_count = 0
+    for question_data in initial_prompts:
+        question_id = question_data['id']
+        short_label = prompt_manager.get_short_label(question_data)
+        
+        # Get the answer for this Level 1 question
+        if short_label in answers_dict:
+            answer = answers_dict[short_label]['answer']
+            
+            # Get follow-up questions
+            followups = prompt_manager.get_followup_prompts(question_id, answer)
+            
+            if followups:
+                print(f"\n--- Follow-ups for '{short_label}' (answered: {answer}) ---")
+                followup_count += len(followups)
+                
+                for followup_q in followups:
+                    followup_id = followup_q['id']
+                    followup_prompt = followup_q['text']
+                    full_followup = prompt_manager.get_full_prompt(followup_q)
+                    followup_label = prompt_manager.get_short_label(followup_q)
+                    
+                    # Process follow-up question
+                    try:
+                        followup_answer, followup_conf = vqa_model.process_question(image, full_followup)
+                    except Exception as e:
+                        print(f"Error processing follow-up '{followup_id}': {e}")
+                        try:
+                            followup_answer, followup_conf = vqa_model.process_question(image, followup_prompt)
+                        except Exception as e2:
+                            print(f"Error processing follow-up '{followup_id}' with basic prompt: {e2}")
+                            followup_answer, followup_conf = None, None
+                    
+                    # Store answer
+                    if followup_answer is not None:
+                        answers_dict[followup_label] = {
+                            'answer': followup_answer,
+                            'confidence': followup_conf
+                        }
+                        
+                        result_obj = {
+                            "question_id": followup_id,
+                            "question": full_followup,
+                            "answer": followup_answer,
+                            "confidence": followup_conf,
+                            "model": model_name,
+                            "level": 2,
+                            "parent_question": question_id
+                        }
+                        result_objects.append(result_obj)
+                        
+                        # Print to console
+                        if followup_conf is not None:
+                            print(f"  └─ {followup_label}: {followup_answer} (conf: {followup_conf:.2f})")
+                        else:
+                            print(f"  └─ {followup_label}: {followup_answer}")
+    
+    if followup_count == 0:
+        print("No follow-up questions triggered (all Level 1 answers were negative)")
+    else:
+        print(f"\nProcessed {followup_count} follow-up questions")
+    
+    return answers_dict, result_objects
+
+
 def fromSVO(svo_input_path, output_dir, model_name, prompt_preset, frame_stride):
-    """Main processing function."""
+    """Main processing function for SVO files."""
     # Device setup
     device = "cuda" if torch.cuda.is_available() else "cpu"
     base_dtype = torch.float16 if device == "cuda" else torch.float32
@@ -31,10 +162,8 @@ def fromSVO(svo_input_path, output_dir, model_name, prompt_preset, frame_stride)
     print(f"Output: {answers_path}")
     
     # Load prompts
-    prompt_json_path = Path(__file__).parent / "vqa_prompts.json"
-    prompt_manager = PromptManager(str(prompt_json_path), preset=prompt_preset)
-    prompts = prompt_manager.get_prompts()
-    print(f"\nLoaded {len(prompts)} prompts from preset: {prompt_preset}")
+    prompt_manager = PromptManager(preset=prompt_preset)
+    prompt_manager.print_hierarchy_info()
     
     # Initialize model
     vqa_model = VQAModel(model_name, device=device, dtype=base_dtype)
@@ -85,54 +214,23 @@ def fromSVO(svo_input_path, output_dir, model_name, prompt_preset, frame_stride)
                         
                         image = Image.fromarray(img_rgb)
                         
-                        # Process all prompts
-                        answers_dict = {}
+                        # Process hierarchically
                         print(f"\n{'='*70}")
-                        print(f"FRAME {frame} - PROCESSING {len(prompts)} QUESTIONS")
+                        print(f"FRAME {frame}")
                         print(f"{'='*70}")
                         
-                        for question_data in prompts:
-                            question_id = question_data['id']
-                            question_prompt = question_data['text']
-                            full_prompt = prompt_manager.get_full_prompt(question_data) # question with context
-                            short_label = prompt_manager.get_short_label(question_data)
-
-                            # Process question
-                            try:
-                                answer_text, confidence = vqa_model.process_question(image, full_prompt)
-                            except Exception as e:
-                                print(f"Error processing question '{question_id}': {e}")
-                                try:
-                                    answer_text, confidence = vqa_model.process_question(image, question_prompt)
-                                except Exception as e2:
-                                    print(f"Error processing question '{question_id}' with basic prompt")
-
-                            # Store for display
-                            if answer_text is not None:
-                                answers_dict[short_label] = {
-                                    'answer': answer_text,
-                                    'confidence': confidence
-                                }
-                                
-                                # Log result
-                                result_obj = {
-                                    "frame": int(frame),
-                                    "question_id": question_id,
-                                    "question": full_prompt,
-                                    "answer": answer_text,
-                                    "confidence": confidence,
-                                    "model": model_name
-                                }
-                                ans_f.write(json.dumps(result_obj) + "\n")
-                                ans_f.flush()
-                                
-                                # Print to console
-                                if confidence is not None:
-                                    print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n\tConfidence: ({confidence:.2f})\n")
-                                else:
-                                    print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n")
+                        answers_dict, result_objects = process_hierarchical_questions(
+                            image, prompt_manager, vqa_model, model_name
+                        )
                         
-                        print(f"{'='*70}")
+                        # Write results to file
+                        for result_obj in result_objects:
+                            result_obj["frame"] = int(frame)
+                            ans_f.write(json.dumps(result_obj) + "\n")
+                        ans_f.flush()
+                        
+                        print(f"\n{'='*70}")
+                        print(f"Processed {len(result_objects)} total questions")
                         print("Press any key to continue...")
                         
                         # Display frame
@@ -153,6 +251,7 @@ def fromSVO(svo_input_path, output_dir, model_name, prompt_preset, frame_stride)
         zed.close()
     
     return 0
+
 
 def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=20, generate_map=False):
     """Main processing function for images from directory."""
@@ -188,8 +287,9 @@ def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=2
     
     # Load prompts
     prompt_manager = PromptManager(preset=prompt_preset)
-    prompts = prompt_manager.get_prompts()
-    print(f"\nLoaded {len(prompts)} prompts from preset: {prompt_preset}")
+    
+    if not generate_map:
+        prompt_manager.print_hierarchy_info()
     
     # Initialize model
     vqa_model = VQAModel(model_name, device=device, dtype=base_dtype)
@@ -212,61 +312,27 @@ def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=2
                         print(f"Error loading {image_path}: {e}")
                         continue
                     
-                    # Process all prompts
-                    answers_dict = {}
-                    if not generate_event_map:
+                    # Process hierarchically
+                    if not generate_map:
                         print(f"\n{'='*70}")
                         print(f"IMAGE {idx+1}/{len(image_files)}: {image_path.name}")
-                        print(f"PROCESSING {len(prompts)} QUESTIONS")
                         print(f"{'='*70}")
                     
-                    for question_data in prompts:
-                        question_id = question_data['id']
-                        question_prompt = question_data['text']
-                        full_prompt = prompt_manager.get_full_prompt(question_data)
-                        short_label = prompt_manager.get_short_label(question_data)
-                        
-                        # Process question
-                        try:
-                            answer_text, confidence = vqa_model.process_question(image, full_prompt)
-                        except Exception as e:
-                            if not generate_map: print(f"Error processing question '{question_id}': {e}") 
-                            try:
-                                answer_text, confidence = vqa_model.process_question(image, question_prompt)
-                            except Exception as e2:
-                                if not generate_map: print(f"Error processing question '{question_id}' with basic prompt: {e2}")
-                                answer_text, confidence = None, None
-                        
-                        # Store for display
-                        if answer_text is not None:
-                            answers_dict[short_label] = {
-                                'answer': answer_text,
-                                'confidence': confidence
-                            }
-                            
-                            # Log result
-                            result_obj = {
-                                "image_path": str(image_path),
-                                "image_name": image_path.name,
-                                "image_index": idx,
-                                "question_id": question_id,
-                                "question": full_prompt,
-                                "answer": answer_text,
-                                "confidence": confidence,
-                                "model": model_name
-                            }
-                            ans_f.write(json.dumps(result_obj) + "\n")
-                            ans_f.flush()
-                            
-                            if not generate_map:
-                                # Print to console
-                                if confidence is not None:
-                                    print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n\tConfidence: ({confidence:.2f})\n")
-                                else:
-                                    print(f"{short_label}:\n\tQuestion: {full_prompt}\n\tAnswer: {answer_text}\n")
+                    answers_dict, result_objects = process_hierarchical_questions(
+                        image, prompt_manager, vqa_model, model_name
+                    )
+                    
+                    # Write results to file
+                    for result_obj in result_objects:
+                        result_obj["image_path"] = str(image_path)
+                        result_obj["image_name"] = image_path.name
+                        result_obj["image_index"] = idx
+                        ans_f.write(json.dumps(result_obj) + "\n")
+                    ans_f.flush()
                     
                     if not generate_map:
-                        print(f"{'='*70}")
+                        print(f"\n{'='*70}")
+                        print(f"Processed {len(result_objects)} total questions")
                         print("Press any key to continue (or 'q' to quit)...")
                         
                         # Display frame
@@ -278,9 +344,9 @@ def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=2
                         if key == ord('q') or key == ord('Q'):
                             print("\nQuitting...")
                             break
-                    
+                
                 # Progress bar
-                progress_bar((idx + 1) / max(1,len(image_files)) * 100, 30)
+                progress_bar((idx + 1) / max(1, len(image_files)) * 100, 30)
             
             progress_bar(100, 30)
             print("\n\nProcessing complete!")
@@ -298,17 +364,18 @@ def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=2
     
     return 0
 
+
 if __name__ == "__main__":
 
     """# From SVO
     # ============ CONFIGURATION ============
-    MODEL = "vilt"  # Options: vilt, blip2, blip2-large, llava, instructblip
-    PROMPT_PRESET = "boolean_only"  # Options: safety_critical, full_assessment, environment_only, crossing_focused, boolean_only
+    MODEL = "instructblip"  # Options: vilt, blip2, blip2-large, llava, instructblip
+    PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
     FRAME_STRIDE = 100  # Process every N-th frame
     # =======================================
     
     print(f"="*70)
-    print(f"VQA Pedestrian Navigation System")
+    print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
     print(f"="*70)
     print(f"Model: {MODEL}")
     print(f"Preset: {PROMPT_PRESET}")
@@ -323,14 +390,14 @@ if __name__ == "__main__":
 
     # From Images 
     # ============ CONFIGURATION ============
-    MODEL = "vilt"  # Options: vilt, blip2, blip2-large, llava, instructblip
-    PROMPT_PRESET = "boolean_only"  # Options: safety_critical, full_assessment, environment_only, crossing_focused, boolean_only
+    MODEL = "instructblip"  # Options: vilt, blip2, blip2-large, llava, instructblip
+    PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
     CONTINENT = "America"
     CITY = "NewYork"
     # =======================================
     
     print(f"="*70)
-    print(f"VQA Pedestrian Navigation System")
+    print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
     print(f"="*70)
     print(f"Model: {MODEL}")
     print(f"Preset: {PROMPT_PRESET}")
@@ -341,8 +408,4 @@ if __name__ == "__main__":
     output_dir = f"../data/vqa_outputs/{CITY}/{MODEL}_{PROMPT_PRESET}/"
     
     exit_code = fromImages(image_dir, output_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True)
-
-     
-
-
-
+    sys.exit(exit_code)
