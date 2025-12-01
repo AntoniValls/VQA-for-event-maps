@@ -81,7 +81,7 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
     
     # Step 2: Process Level 2 follow-up questions based on Level 1 answers
     print(f"\n{'='*70}")
-    print(f"LEVEL 2 FOLLOW-UP QUESTIONS")
+    print(f"LEVEL 2 FOLLOW-UP QUESTIONS")                                                                               # LEVEL 3 NOT DONE
     print(f"{'='*70}")
     
     followup_count = 0

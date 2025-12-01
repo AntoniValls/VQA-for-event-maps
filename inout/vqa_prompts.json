@@ -30,7 +30,7 @@
         },
         {
           "id": "q_construction_visible",
-          "text": "Is construction or a pathway detour visible?",
+          "text": "Is any construction activity present?",
           "topic": "Construction Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -39,7 +39,7 @@
         },
         {
           "id": "q_obstacle_blocking",
-          "text": "Is any obstacle blocking the direct path ahead?",
+          "text": "Is any obstacle blocking part of the direct path ahead?",
           "topic": "Obstacle Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -57,7 +57,7 @@
         },
         {
           "id": "q_vehicle_nearby",
-          "text": "Is any vehicle within 10 meters of the path?",
+          "text": "Are there any vehicles within 10 meters of the pathway?",
           "topic": "Vehicle Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -211,15 +211,36 @@
           "enabled": true
         },
         {
-          "id": "q_construction_alternative_marked",
-          "text": "Is an alternative path clearly marked?",
+          "id": "q_construction_pathway_detour",
+          "text": "Is any pathway detour present?",
           "topic": "Construction - Navigation",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_construction_visible",
+          "short_label": "Pathway Detour",
+          "enabled": true
+        },
+        {
+          "id": "q_construction_alternative_path",
+          "text": "Is an alternative path clearly marked?",
+          "topic": "Construction - Navigation",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_construction_pathway_detour",
           "short_label": "Alternative Marked",
           "enabled": true
+        },
+        {
+          "id": "q_construction_overhead",
+          "text": "Does the expected path pass underneath any construction scaffolding or overhead work areas?",
+          "topic": "Construction - Overhead Danger",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_construction_visible",
+          "short_label": "Construction Scaffolding",
+          "enabled": true
         }
+
       ]
     },
     "obstacle_details": {
@@ -237,13 +258,33 @@
           "enabled": true
         },
         {
-          "id": "q_obstacle_is_object",
-          "text": "Is the obstacle an object?",
+          "id": "q_obstacle_is_movable",
+          "text": "Is the obstacle a movable object (furniture, bins, boxes, signs, planters)?",
           "topic": "Obstacle - Type",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_obstacle_blocking",
-          "short_label": "Obstacle Object",
+          "short_label": "Obstacle Movable",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_is_not_movable",
+          "text": "Is the obstacle fixed infrastructure (stairs, railings, posts, bollards, curbs)?",
+          "topic": "Obstacle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Obstacle Not Movable",
+          "enabled": true
+        },
+          {
+          "id": "q_obstacle_is_nnatural",
+          "text": "Is the obstacle natural (tree, vegetation, rocks)?",
+          "topic": "Obstacle - Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Obstacle Natural",
           "enabled": true
         },
         {
@@ -359,8 +400,8 @@
           "enabled": true
         },
         {
-          "id": "q_vehicle_is_motorcycle_scooter",
-          "text": "Is there a motorcycle or scooter within 10 meters of the path?",
+          "id": "q_vehicle_is_motorcycle",
+          "text": "Is there a motorcycle within 10 meters of the path?",
           "topic": "Vehicle - Type",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -369,13 +410,13 @@
           "enabled": true
         },
         {
-          "id": "q_bicycle_moving_toward",
-          "text": "Is the cyclist moving toward or away from the camera?",
+          "id": "q_bicycle_moving",
+          "text": "Is the bicycle moving?",
           "topic": "Vehicle - Bicycle Direction",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_is_bicycle",
-          "short_label": "Cyclist Approaching",
+          "short_label": "Cyclist moving",
           "enabled": true
         },
         {
@@ -390,7 +431,7 @@
         },
         {
           "id": "q_motor_vehicle_moving",
-          "text": "Is the vehicle moving or stationary?",
+          "text": "Is there a car, truck or bus moving?",
           "topic": "Vehicle - Motor State",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -399,18 +440,8 @@
           "enabled": true
         },
         {
-          "id": "q_motor_vehicle_parked",
-          "text": "Is the vehicle parked or in traffic?",
-          "topic": "Vehicle - Motor State",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_vehicle_is_car_truck_bus",
-          "short_label": "Vehicle Parked",
-          "enabled": true
-        },
-        {
           "id": "q_motor_vehicle_blocking",
-          "text": "Is the vehicle blocking the pedestrian path?",
+          "text": "Is the car, truck or bus blocking the pedestrian path?",
           "topic": "Vehicle - Motor Impact",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -419,33 +450,13 @@
           "enabled": true
         },
         {
-          "id": "q_two_wheeler_within_5m",
-          "text": "Is the vehicle within 5 meters?",
-          "topic": "Vehicle - Two-Wheeler Distance",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_vehicle_is_motorcycle_scooter",
-          "short_label": "Within 5m",
-          "enabled": true
-        },
-        {
           "id": "q_two_wheeler_sidewalk_road",
-          "text": "Is the vehicle on the sidewalk or roadway?",
+          "text": "Is the motorcycle on the sidewalk?",
           "topic": "Vehicle - Two-Wheeler Location",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "dependency": "q_vehicle_is_motorcycle_scooter",
+          "dependency": "q_vehicle_is_motorcycle",
           "short_label": "On Sidewalk",
-          "enabled": true
-        },
-        {
-          "id": "q_two_wheeler_on_sidewalk",
-          "text": "Is the vehicle on the sidewalk?",
-          "topic": "Vehicle - Two-Wheeler Violation",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_vehicle_is_motorcycle_scooter",
-          "short_label": "Sidewalk Violation",
           "enabled": true
         },
         {
@@ -454,8 +465,18 @@
           "topic": "Vehicle - Two-Wheeler Type",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "dependency": "q_vehicle_is_motorcycle_scooter",
+          "dependency": "q_vehicle_is_motorcycle",
           "short_label": "Motorized",
+          "enabled": true
+        },
+        {
+          "id": "q_two_wheeler_moving",
+          "text": "Is the motorcycle moving??",
+          "topic": "Vehicle - Two-Wheeler Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_vehicle_is_motorcycle",
+          "short_label": "Motorcycle Moving",
           "enabled": true
         }
       ]
