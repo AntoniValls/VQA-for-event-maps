@@ -15,6 +15,7 @@ from utils.utils import progress_bar
 
 from core.promptManager import PromptManager
 from core.vqaModel import VQAModel
+from core.eval import evaluate_model_performance
 from viz.viz_utils import create_display_frame, generate_event_map
 
 
@@ -32,7 +33,7 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
     # Reset answer history for new frame
     prompt_manager.reset_answer_history()
     
-    # Step 1: Process all Level 1 questions
+    # Level 1
     initial_prompts = prompt_manager.get_initial_prompts()
     
     print(f"\n{'='*70}")
@@ -145,6 +146,74 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
         print("No follow-up questions triggered (all Level 1 answers were negative)")
     else:
         print(f"\nProcessed {followup_count} follow-up questions")
+
+    # Step 3: Process Level 3 follow-up questions based on Level 2 answers
+    print(f"\n{'='*70}")
+    print(f"LEVEL 3 FOLLOW-UP QUESTIONS")                                                                               # LEVEL 3 NOT DONE
+    print(f"{'='*70}")
+    
+    followups2 = followups.copy()
+    followup_count = 0
+    for question_data in followups2:
+        question_id = question_data['id']
+        short_label = prompt_manager.get_short_label(question_data)
+        
+        # Get the answer for this Level 1 question
+        if short_label in answers_dict:
+            answer = answers_dict[short_label]['answer']
+            
+            # Get follow-up questions
+            followups = prompt_manager.get_followup_prompts(question_id, answer)
+            
+            if followups:
+                print(f"\n--- Follow-ups for '{short_label}' (answered: {answer}) ---")
+                followup_count += len(followups)
+                
+                for followup_q in followups:
+                    followup_id = followup_q['id']
+                    followup_prompt = followup_q['text']
+                    full_followup = prompt_manager.get_full_prompt(followup_q)
+                    followup_label = prompt_manager.get_short_label(followup_q)
+                    
+                    # Process follow-up question
+                    try:
+                        followup_answer, followup_conf = vqa_model.process_question(image, full_followup)
+                    except Exception as e:
+                        print(f"Error processing follow-up '{followup_id}': {e}")
+                        try:
+                            followup_answer, followup_conf = vqa_model.process_question(image, followup_prompt)
+                        except Exception as e2:
+                            print(f"Error processing follow-up '{followup_id}' with basic prompt: {e2}")
+                            followup_answer, followup_conf = None, None
+                    
+                    # Store answer
+                    if followup_answer is not None:
+                        answers_dict[followup_label] = {
+                            'answer': followup_answer,
+                            'confidence': followup_conf
+                        }
+                        
+                        result_obj = {
+                            "question_id": followup_id,
+                            "question": full_followup,
+                            "answer": followup_answer,
+                            "confidence": followup_conf,
+                            "model": model_name,
+                            "level": 2,
+                            "parent_question": question_id
+                        }
+                        result_objects.append(result_obj)
+                        
+                        # Print to console
+                        if followup_conf is not None:
+                            print(f"  └─ {followup_label}: {followup_answer} (conf: {followup_conf:.2f})")
+                        else:
+                            print(f"  └─ {followup_label}: {followup_answer}")
+    
+    if followup_count == 0:
+        print("No follow-up questions triggered (all Level 2 answers were negative)")
+    else:
+        print(f"\nProcessed {followup_count} follow-up questions")
     
     return answers_dict, result_objects
 
@@ -253,7 +322,7 @@ def fromSVO(svo_input_path, output_dir, model_name, prompt_preset, frame_stride)
     return 0
 
 
-def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=20, generate_map=False):
+def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_map=False, evaluate=False):
     """Main processing function for images from directory."""
     # Device setup
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -264,8 +333,9 @@ def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=2
     image_dir = os.path.join(input_dir, "images")
     if generate_map:
         gps_csv_path = os.path.join(input_dir, "gps_positions.csv")
-    os.makedirs(output_dir, exist_ok=True)
-    answers_path = os.path.join(output_dir, "answers.jsonl")
+    answers_folder = os.path.join(input_dir,f"results/{model_name}")
+    os.makedirs(answers_folder, exist_ok=True)
+    answers_path = os.path.join(answers_folder, "answers.jsonl")
     print(f"Output: {answers_path}")
     
     # Get list of image files
@@ -302,7 +372,7 @@ def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=2
     print(f"\nProcessing {len(image_files)} images\n")
     
     try:
-        with open(answers_path, "a", encoding="utf-8") as ans_f:
+        with open(answers_path, "w", encoding="utf-8") as ans_f:
             for idx, image_path in enumerate(image_files):
                 if idx % frame_stride == 0:
                     # Load image
@@ -356,11 +426,16 @@ def fromImages(input_dir, output_dir, model_name, prompt_preset, num_keyframes=2
     
     # Generate interactive map if requested
     if generate_map and gps_csv_path and os.path.exists(gps_csv_path):
-        map_output_path = os.path.join(output_dir, "interactive_map.html")
+        map_output_path = os.path.join(answers_folder, "interactive_map.html")
         try:
             generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir)
         except Exception as e:
             print(f"Error generating map: {e}")
+    
+    # Evaluate with the GT if requested
+    if eval:
+        gt_path = os.path.join(input_dir, "ground_truth_labels.jsonl")
+        evaluate_model_performance(answers_path, gt_path)
     
     return 0
 
@@ -393,7 +468,7 @@ if __name__ == "__main__":
     MODEL = "instructblip"  # Options: vilt, blip2, blip2-large, llava, instructblip
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
     CONTINENT = "America"
-    CITY = "NewYork"
+    CITY = "BuenosAires"
     # =======================================
     
     print(f"="*70)
@@ -405,7 +480,6 @@ if __name__ == "__main__":
     print(f"="*70)
 
     image_dir = f"../data/{CONTINENT}/{CITY}"
-    output_dir = f"../data/vqa_outputs/{CITY}/{MODEL}_{PROMPT_PRESET}/"
     
-    exit_code = fromImages(image_dir, output_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True)
+    exit_code = fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True, evaluate=True)
     sys.exit(exit_code)

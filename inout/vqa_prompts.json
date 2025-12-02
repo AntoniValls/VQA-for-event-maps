@@ -1,9 +1,10 @@
 {
   "metadata": {
-    "version": "2.0",
+    "version": "3.0",
     "description": "Hierarchical VQA Question System for Pedestrian Navigation",
     "base_context": "You are an expert at detecting pedestrian obstacles for people with low vision. Answer only with Yes or No.",
-    "date_created": "2025-11-24"
+    "date_created": "2025-12-01",
+    "date_updated": "2025-12-01"
   },
   "prompt_categories": {
     "level_1_primary": {
@@ -30,7 +31,7 @@
         },
         {
           "id": "q_construction_visible",
-          "text": "Is any construction activity present?",
+          "text": "Is any construction activity present on the current path?",
           "topic": "Construction Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -66,11 +67,11 @@
         },
         {
           "id": "q_surface_hazardous",
-          "text": "Is the path surface hazardous (wet, broken, or uneven)?",
-          "topic": "Surface Hazard Detection",
+          "text": "Does the path surface show abnormal conditions (water, damage, significant slope)?",
+          "topic": "Surface Condition Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "short_label": "Surface Hazard",
+          "short_label": "Surface Defects",
           "enabled": true
         },
         {
@@ -90,7 +91,7 @@
       "questions": [
         {
           "id": "q_crossing_signal_present",
-          "text": "Is a pedestrian signal present at this crossing?",
+          "text": "Is there a pedestrian signal present at the crossing?",
           "topic": "Crossing - Signal",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -100,12 +101,12 @@
         },
         {
           "id": "q_crossing_signal_red_green",
-          "text": "Is the pedestrian signal showing red or green?",
+          "text": "Is the pedestrian signal showing green?",
           "topic": "Crossing - Signal State",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_crossing_signal_present",
-          "short_label": "Signal Red/Green",
+          "short_label": "Signal Green",
           "enabled": true
         },
         {
@@ -120,7 +121,7 @@
         },
         {
           "id": "q_crossing_vehicles_moving",
-          "text": "Are the vehicles moving or stopped?",
+          "text": "Are the vehicles in the crossing lanes moving?",
           "topic": "Crossing - Traffic State",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -130,7 +131,7 @@
         },
         {
           "id": "q_crossing_marked",
-          "text": "Is the crossing marked with painted lines?",
+          "text": "Is there a crossing marked with painted lines?",
           "topic": "Crossing - Infrastructure",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -140,7 +141,7 @@
         },
         {
           "id": "q_crossing_others_waiting",
-          "text": "Are other pedestrians waiting or crossing?",
+          "text": "Are there other pedestrians on the street crossing?",
           "topic": "Crossing - Social",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -155,8 +156,8 @@
       "description": "Conditional questions when stairs are detected",
       "questions": [
         {
-          "id": "q_stairs_upward",
-          "text": "Do the stairs lead upward or downward?",
+          "id": "q_stairs_heading",
+          "text": "Are the stairs directly ahead on the path?",
           "topic": "Stairs - Direction",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -166,7 +167,7 @@
         },
         {
           "id": "q_stairs_handrail",
-          "text": "Is there a handrail present?",
+          "text": "Is there a handrail present next to the stairs?",
           "topic": "Stairs - Safety",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -180,7 +181,7 @@
           "topic": "Stairs - Navigation",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "dependency": "q_stairs_visible",
+          "dependency": "q_stairs_heading",
           "short_label": "Stairs Only Option",
           "enabled": true
         }
@@ -202,7 +203,7 @@
         },
         {
           "id": "q_construction_equipment",
-          "text": "Is construction equipment visible?",
+          "text": "Is construction equipment visible on or near the path?",
           "topic": "Construction - Equipment",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -211,13 +212,13 @@
           "enabled": true
         },
         {
-          "id": "q_construction_pathway_detour",
-          "text": "Is any pathway detour present?",
-          "topic": "Construction - Navigation",
+          "id": "q_construction_overhead",
+          "text": "Does the expected path pass underneath any construction scaffolding or overhead work areas?",
+          "topic": "Construction - Overhead Danger",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_construction_visible",
-          "short_label": "Pathway Detour",
+          "short_label": "Overhead Hazard",
           "enabled": true
         },
         {
@@ -229,18 +230,7 @@
           "dependency": "q_construction_pathway_detour",
           "short_label": "Alternative Marked",
           "enabled": true
-        },
-        {
-          "id": "q_construction_overhead",
-          "text": "Does the expected path pass underneath any construction scaffolding or overhead work areas?",
-          "topic": "Construction - Overhead Danger",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_construction_visible",
-          "short_label": "Construction Scaffolding",
-          "enabled": true
         }
-
       ]
     },
     "obstacle_details": {
@@ -249,82 +239,72 @@
       "questions": [
         {
           "id": "q_obstacle_is_person",
-          "text": "Is the obstacle a person?",
-          "topic": "Obstacle - Type",
+          "text": "Is there a person blocking or on the path?",
+          "topic": "Obstacle - Type Person",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_obstacle_blocking",
-          "short_label": "Obstacle Person",
-          "enabled": true
-        },
-        {
-          "id": "q_obstacle_is_movable",
-          "text": "Is the obstacle a movable object (furniture, bins, boxes, signs, planters)?",
-          "topic": "Obstacle - Type",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_obstacle_blocking",
-          "short_label": "Obstacle Movable",
-          "enabled": true
-        },
-        {
-          "id": "q_obstacle_is_not_movable",
-          "text": "Is the obstacle fixed infrastructure (stairs, railings, posts, bollards, curbs)?",
-          "topic": "Obstacle - Type",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_obstacle_blocking",
-          "short_label": "Obstacle Not Movable",
-          "enabled": true
-        },
-          {
-          "id": "q_obstacle_is_nnatural",
-          "text": "Is the obstacle natural (tree, vegetation, rocks)?",
-          "topic": "Obstacle - Type",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_obstacle_blocking",
-          "short_label": "Obstacle Natural",
+          "short_label": "Person",
           "enabled": true
         },
         {
           "id": "q_obstacle_is_vehicle",
-          "text": "Is the obstacle a vehicle?",
-          "topic": "Obstacle - Type",
+          "text": "Is there a vehicle blocking or on the path?",
+          "topic": "Obstacle - Type Vehicle",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_obstacle_blocking",
-          "short_label": "Obstacle Vehicle",
+          "short_label": "Vehicle",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_movable_objects",
+          "text": "Are there movable objects on the path (furniture, bins, planters)?",
+          "topic": "Obstacle - Type Movable",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Movable Objects",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_fixed_infrastructure",
+          "text": "Are there fixed infrastructure obstacles on the path (stairs, railings, traffic signs, streetlights)?",
+          "topic": "Obstacle - Type Fixed",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Fixed Infrastructure",
+          "enabled": true
+        },
+        {
+          "id": "q_obstacle_natural",
+          "text": "Are there natural obstacles on the path (trees, vegetation, rocks)?",
+          "topic": "Obstacle - Type Natural",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Natural Obstacles",
           "enabled": true
         },
         {
           "id": "q_obstacle_blocks_half",
-          "text": "Does the obstacle block more than half the path width?",
+          "text": "Is more than half the path width blocked?",
           "topic": "Obstacle - Severity",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_obstacle_blocking",
-          "short_label": "Blocks Half Path",
+          "short_label": "Half Width Blocked",
           "enabled": true
         },
         {
           "id": "q_obstacle_space_around",
-          "text": "Is there clear space to walk around the obstacle?",
+          "text": "Is there clear space to walk around the obstructions?",
           "topic": "Obstacle - Navigation",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_obstacle_blocking",
           "short_label": "Space Around",
-          "enabled": true
-        },
-        {
-          "id": "q_obstacle_seating",
-          "text": "Is outdoor seating encroaching onto the walkway?",
-          "topic": "Obstacle - Seating",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_obstacle_blocking",
-          "short_label": "Seating Encroach",
           "enabled": true
         },
         {
@@ -336,26 +316,26 @@
           "dependency": "q_obstacle_blocking",
           "short_label": "Overhead Hazard",
           "enabled": true
+        },
+        {
+          "id": "q_obstacle_seating",
+          "text": "Is outdoor seating encroaching onto the walkway?",
+          "topic": "Obstacle - Seating",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_obstacle_blocking",
+          "short_label": "Outdoor Seating",
+          "enabled": true
         }
       ]
     },
     "crowding_details": {
       "name": "Crowding Questions",
-      "description": "Conditional questions when pedestrians are detected",
+      "description": "Conditional questions when multiple pedestrians are detected",
       "questions": [
         {
-          "id": "q_crowding_more_than_five",
-          "text": "Are more than 5 pedestrians visible ahead?",
-          "topic": "Crowding - Density",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_pedestrians_present",
-          "short_label": "5+ Pedestrians",
-          "enabled": true
-        },
-        {
           "id": "q_crowding_same_direction",
-          "text": "Are pedestrians moving in the same direction?",
+          "text": "Are the majority of pedestrians moving in the same direction?",
           "topic": "Crowding - Flow",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -364,59 +344,59 @@
           "enabled": true
         },
         {
-          "id": "q_crowding_path_reduced",
-          "text": "Is the path width reduced due to crowding?",
+          "id": "q_crowding_slow_movement",
+          "text": "Would normal walking speed need to be reduced due to pedestrians?",
           "topic": "Crowding - Impact",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_pedestrians_present",
-          "short_label": "Width Reduced",
+          "short_label": "Speed Reduced",
           "enabled": true
         }
       ]
     },
     "vehicle_details": {
       "name": "Vehicle Questions",
-      "description": "Conditional questions when vehicle is detected",
+      "description": "Conditional questions when vehicles are detected nearby",
       "questions": [
         {
           "id": "q_vehicle_is_bicycle",
           "text": "Is there a bicycle within 10 meters of the path?",
-          "topic": "Vehicle - Type",
+          "topic": "Vehicle - Type Bicycle",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_nearby",
-          "short_label": "Bicycle Present",
+          "short_label": "Bicycle",
           "enabled": true
         },
         {
           "id": "q_vehicle_is_car_truck_bus",
           "text": "Is there a car, truck or bus within 10 meters of the path?",
-          "topic": "Vehicle - Type",
+          "topic": "Vehicle - Type Motor",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_nearby",
-          "short_label": "Motor Vehicle",
+          "short_label": "Car/Truck/Bus",
           "enabled": true
         },
         {
           "id": "q_vehicle_is_motorcycle",
           "text": "Is there a motorcycle within 10 meters of the path?",
-          "topic": "Vehicle - Type",
+          "topic": "Vehicle - Type Two-Wheeler",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_nearby",
-          "short_label": "Two-Wheeler",
+          "short_label": "Motorcycle",
           "enabled": true
         },
         {
           "id": "q_bicycle_moving",
           "text": "Is the bicycle moving?",
-          "topic": "Vehicle - Bicycle Direction",
+          "topic": "Vehicle - Bicycle Movement",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_is_bicycle",
-          "short_label": "Cyclist moving",
+          "short_label": "Bicycle Moving",
           "enabled": true
         },
         {
@@ -426,13 +406,13 @@
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_is_bicycle",
-          "short_label": "In Bike Lane",
+          "short_label": "On Bike Lane",
           "enabled": true
         },
         {
           "id": "q_motor_vehicle_moving",
           "text": "Is there a car, truck or bus moving?",
-          "topic": "Vehicle - Motor State",
+          "topic": "Vehicle - Motor Movement",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_is_car_truck_bus",
@@ -442,7 +422,7 @@
         {
           "id": "q_motor_vehicle_blocking",
           "text": "Is the car, truck or bus blocking the pedestrian path?",
-          "topic": "Vehicle - Motor Impact",
+          "topic": "Vehicle - Motor Blockage",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_is_car_truck_bus",
@@ -450,7 +430,7 @@
           "enabled": true
         },
         {
-          "id": "q_two_wheeler_sidewalk_road",
+          "id": "q_motorcycle_sidewalk",
           "text": "Is the motorcycle on the sidewalk?",
           "topic": "Vehicle - Two-Wheeler Location",
           "type": "boolean",
@@ -460,19 +440,9 @@
           "enabled": true
         },
         {
-          "id": "q_two_wheeler_motorized",
-          "text": "Is it a motorized scooter?",
-          "topic": "Vehicle - Two-Wheeler Type",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_vehicle_is_motorcycle",
-          "short_label": "Motorized",
-          "enabled": true
-        },
-        {
-          "id": "q_two_wheeler_moving",
-          "text": "Is the motorcycle moving??",
-          "topic": "Vehicle - Two-Wheeler Type",
+          "id": "q_motorcycle_moving",
+          "text": "Is the motorcycle moving?",
+          "topic": "Vehicle - Two-Wheeler Movement",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_vehicle_is_motorcycle",
@@ -497,7 +467,7 @@
         },
         {
           "id": "q_surface_sloped",
-          "text": "Is the surface sloped or tilted?",
+          "text": "Is the surface noticeably sloped or tilted?",
           "topic": "Surface - Slope",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -516,13 +486,13 @@
           "enabled": true
         },
         {
-          "id": "q_surface_overhead_hazard",
-          "text": "Is there a low-hanging branch, awning, or sign overhead?",
-          "topic": "Surface - Overhead",
+          "id": "q_surface_cracks_holes",
+          "text": "Is the pavement visibly damaged (large cracks, holes, or broken sections)?",
+          "topic": "Surface - Damage",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_surface_hazardous",
-          "short_label": "Overhead",
+          "short_label": "Cracks/Holes",
           "enabled": true
         }
       ]
@@ -532,26 +502,6 @@
       "description": "Conditional questions when visibility is reduced",
       "questions": [
         {
-          "id": "q_visibility_nighttime",
-          "text": "Is it nighttime or dusk?",
-          "topic": "Visibility - Time",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_visibility_reduced",
-          "short_label": "Nighttime",
-          "enabled": true
-        },
-        {
-          "id": "q_visibility_glare",
-          "text": "Is direct sunlight causing glare?",
-          "topic": "Visibility - Glare",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_visibility_reduced",
-          "short_label": "Glare",
-          "enabled": true
-        },
-        {
           "id": "q_visibility_shadows",
           "text": "Are shadows covering the path ahead?",
           "topic": "Visibility - Shadows",
@@ -559,6 +509,16 @@
           "choices": ["Yes", "No"],
           "dependency": "q_visibility_reduced",
           "short_label": "Shadows",
+          "enabled": true
+        },
+        {
+          "id": "q_visibility_wrong",
+          "text": "Is the image obstructed, blurred, or improperly exposed?",
+          "topic": "Visibility - Wrong",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_visibility_reduced",
+          "short_label": "Bad Image",
           "enabled": true
         }
       ]
@@ -609,7 +569,9 @@
         "q_construction_visible",
         "q_construction_barriers",
         "q_construction_equipment",
-        "q_construction_alternative_marked"
+        "q_construction_overhead",
+        "q_construction_pathway_detour",
+        "q_construction_alternative_path"
       ]
     },
     "obstacle": {
@@ -618,12 +580,14 @@
       "enabled_questions": [
         "q_obstacle_blocking",
         "q_obstacle_is_person",
-        "q_obstacle_is_object",
         "q_obstacle_is_vehicle",
+        "q_obstacle_movable_objects",
+        "q_obstacle_fixed_infrastructure",
+        "q_obstacle_natural",
         "q_obstacle_blocks_half",
         "q_obstacle_space_around",
-        "q_obstacle_seating",
-        "q_obstacle_overhead"
+        "q_obstacle_overhead",
+        "q_obstacle_seating"
       ]
     },
     "crowding": {
@@ -643,16 +607,13 @@
         "q_vehicle_nearby",
         "q_vehicle_is_bicycle",
         "q_vehicle_is_car_truck_bus",
-        "q_vehicle_is_motorcycle_scooter",
-        "q_bicycle_moving_toward",
+        "q_vehicle_is_motorcycle",
+        "q_bicycle_moving",
         "q_bicycle_bike_lane",
         "q_motor_vehicle_moving",
-        "q_motor_vehicle_parked",
         "q_motor_vehicle_blocking",
-        "q_two_wheeler_within_5m",
-        "q_two_wheeler_sidewalk_road",
-        "q_two_wheeler_on_sidewalk",
-        "q_two_wheeler_motorized"
+        "q_motorcycle_sidewalk",
+        "q_motorcycle_moving"
       ]
     },
     "surface": {
@@ -680,6 +641,29 @@
       "name": "Full Hierarchical Assessment",
       "description": "All questions - Level 1 triggers appropriate Level 2 questions",
       "enabled_questions": "all"
+    }
+  },
+  "question_dependencies_map": {
+    "description": "Visual map of question dependencies for reference",
+    "structure": {
+      "level_1_triggers": {
+        "q_crossing_nearby": ["q_crossing_signal_present", "q_crossing_vehicles_present", "q_crossing_marked", "q_crossing_others_waiting"],
+        "q_stairs_visible": ["q_stairs_upward", "q_stairs_handrail", "q_stairs_only_option"],
+        "q_construction_visible": ["q_construction_barriers", "q_construction_equipment", "q_construction_overhead", "q_construction_pathway_detour"],
+        "q_obstacle_blocking": ["q_obstacle_is_person", "q_obstacle_is_vehicle", "q_obstacle_movable_objects", "q_obstacle_fixed_infrastructure", "q_obstacle_natural", "q_obstacle_blocks_half", "q_obstacle_space_around", "q_obstacle_overhead", "q_obstacle_seating"],
+        "q_pedestrians_present": ["q_crowding_more_than_five", "q_crowding_same_direction", "q_crowding_path_reduced"],
+        "q_vehicle_nearby": ["q_vehicle_is_bicycle", "q_vehicle_is_car_truck_bus", "q_vehicle_is_motorcycle"],
+        "q_surface_hazardous": ["q_surface_water_ice", "q_surface_sloped", "q_surface_cracks_holes", "q_surface_overhead_hazard"],
+        "q_visibility_reduced": ["q_visibility_nighttime", "q_visibility_glare", "q_visibility_shadows"]
+      },
+      "level_2_triggers": {
+        "q_crossing_signal_present": ["q_crossing_signal_red_green"],
+        "q_crossing_vehicles_present": ["q_crossing_vehicles_moving"],
+        "q_construction_pathway_detour": ["q_construction_alternative_path"],
+        "q_vehicle_is_bicycle": ["q_bicycle_moving", "q_bicycle_bike_lane"],
+        "q_vehicle_is_car_truck_bus": ["q_motor_vehicle_moving", "q_motor_vehicle_blocking"],
+        "q_vehicle_is_motorcycle": ["q_motorcycle_sidewalk", "q_motorcycle_motorized", "q_motorcycle_moving"]
+      }
     }
   }
 }

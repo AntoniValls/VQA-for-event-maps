@@ -1,3 +1,7 @@
+"""
+Script for creating the ground-truth labels of the sequences
+"""
+
 from pathlib import Path
 import sys
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,7 +16,6 @@ from PIL import Image
 from datetime import datetime
 
 from core.promptManager import PromptManager
-
 
 def display_image_with_text(image, text, window_name="Ground Truth Labeling"):
     """
@@ -184,10 +187,6 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
                 print(f"Progress: {labeled_count} labeled, {skipped_count} skipped, {already_labeled_count} already done")
                 print(f"{'='*70}\n")
                 
-                # Process Level 1 questions
-                print("LEVEL 1 QUESTIONS:")
-                print("-" * 70)
-                
                 initial_prompts = prompt_manager.get_initial_prompts()
                 
                 for q_num, question_data in enumerate(initial_prompts, 1):
@@ -343,7 +342,7 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
                                                 "question_id": ffollowup_id,
                                                 "question": ffollowup_text,
                                                 "answer": ffollowup_answer,
-                                                "level": 2,
+                                                "level": 3,
                                                 "parent_question": followup_id,
                                                 "short_label": ffollowup_label,
                                                 "timestamp": datetime.now().isoformat()
@@ -384,9 +383,9 @@ if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
     CONTINENT = "America"
-    CITY = "NewYork"
+    CITY = "BuenosAires"
     NUM_KEYFRAMES = 20  # Number of images to label
-    OVERRIDE_EXISTING = True  # Set to True to re-label already labeled images
+    OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
     # =======================================
     
     print(f"="*70)
