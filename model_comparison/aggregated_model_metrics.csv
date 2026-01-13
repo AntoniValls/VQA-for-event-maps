@@ -1,0 +1,13 @@
+model,region,city,Accuracy,F1,Precision,Recall,Specificity,Total
+vilt,America,BuenosAires,0.392,0.535,0.379,0.909,0.068,429
+llava,America,BuenosAires,0.705,0.638,0.636,0.642,0.748,261
+instructblip,America,BuenosAires,0.692,0.454,0.744,0.327,0.928,250
+qwen-vl,America,BuenosAires,0.757,0.667,0.723,0.619,0.847,301
+vilt,America,SanFrancisco,0.303,0.418,0.269,0.935,0.071,347
+llava,America,SanFrancisco,0.778,0.456,0.581,0.375,0.911,194
+instructblip,America,SanFrancisco,0.789,0.361,0.688,0.244,0.964,185
+qwen-vl,America,SanFrancisco,0.818,0.543,0.781,0.417,0.959,231
+vilt,America,NewYork,0.36,0.506,0.353,0.895,0.049,417
+llava,America,NewYork,0.777,0.689,0.716,0.663,0.845,256
+instructblip,America,NewYork,0.707,0.517,0.623,0.442,0.853,242
+qwen-vl,America,NewYork,0.797,0.692,0.8,0.61,0.909,315

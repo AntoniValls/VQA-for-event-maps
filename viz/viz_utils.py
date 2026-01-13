@@ -90,6 +90,8 @@ def create_display_frame(image, frame_number, answers_dict, model_name):
 def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image_dir, prompt_json_path="../inout/vqa_prompts.json", show=True):
     """
     Generate an interactive map with GPS positions and VQA results.
+    Markers are colored based on which topic categories have positive answers.
+    Level-1 primary questions are excluded from color coding.
     
     Args:
         gps_csv_path: Path to GPS positions CSV file
@@ -113,21 +115,45 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
             answers_data.append(json.loads(line))
     print(f"Loaded {len(answers_data)} VQA results")
     
-    # Load prompt configurations if available
+    # Load prompt configurations and create category mapping
     question_full_text = {}
+    question_to_category = {}  # Map question_id to category name
+    category_colors = {}  # Map category name to color
+    
+    # Categories to exclude from color coding (these are meta-categories, not topics)
+    excluded_categories = {'level_1_primary', 'level_1', 'primary', 'general'}
+    
+    # Define colors for different categories
+    available_colors = [
+        'red', 'blue', 'green', 'purple', 'orange', 
+        'darkred', 'lightred', 'beige', 'darkblue', 'darkgreen',
+        'cadetblue', 'darkpurple', 'pink', 'lightblue', 'lightgreen',
+        'gray', 'black', 'lightgray'
+    ]
+    
     if prompt_json_path and os.path.exists(prompt_json_path):
         try:
             with open(prompt_json_path, 'r') as f:
                 prompt_config = json.load(f)
             
-            # Build mapping of question_id to full question text
+            # Build mapping of question_id to full question text and category
+            color_idx = 0
             for category_name, category_data in prompt_config['prompt_categories'].items():
+                # Skip excluded categories for color assignment
+                if category_name.lower() not in excluded_categories:
+                    category_colors[category_name] = available_colors[color_idx % len(available_colors)]
+                    color_idx += 1
+                
                 for question in category_data['questions']:
-                    question_full_text[question['id']] = {
-                        'short_label': question.get('short_label', question['id']),
+                    question_id = question['id']
+                    question_full_text[question_id] = {
+                        'short_label': question.get('short_label', question_id),
                         'text': question['text']
                     }
+                    question_to_category[question_id] = category_name
+                    
             print(f"Loaded {len(question_full_text)} question definitions")
+            print(f"Topic categories and colors: {category_colors}")
         except Exception as e:
             print(f"Could not load prompt JSON: {e}")
     
@@ -155,8 +181,7 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
     
     # Add alternative tile layers
     folium.TileLayer('CartoDB positron', name='CartoDB Positron').add_to(m)
-    folium.TileLayer('CartoDB dark_matter', name='CartoDB Dark').add_to(m)
-    
+
     # Create path line
     path_coordinates = []
     for _, row in gps_df.iterrows():
@@ -199,61 +224,154 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
             print(f"Error loading thumbnail for {img_name}: {e}")
             img_html = f'<b>{img_name}</b><br>'
         
-        # Create popup HTML
+        # Analyze answers by category to determine marker color
+        # Only consider topic categories (exclude level_1_primary and similar)
+        positive_topic_categories = set()  # Topic categories with positive answers
+        category_answers = {}  # Track all answers by category (including excluded ones)
+        
+        for question_id, ans in img_questions.items():
+            answer = ans['answer'].lower()
+            category = question_to_category.get(question_id, 'unknown')
+            
+            if category not in category_answers:
+                category_answers[category] = []
+            category_answers[category].append(answer)
+            
+            # Check if answer is positive AND category is a topic (not excluded)
+            if category.lower() not in excluded_categories:
+                if 'yes' in answer or 'safe' in answer or 'clear' in answer:
+                    positive_topic_categories.add(category)
+        
+        # Create popup HTML with category grouping
         popup_html = f"""
         <div style="width:400px; max-height:600px; overflow-y:auto;">
             {img_html}
             <h4 style="margin:5px 0;">{img_name}</h4>
-            <table style="width:100%; font-size:11px; border-collapse: collapse;">
         """
         
-        # Add answers to popup (sorted by question_id for consistency)
-        for question_id in sorted(img_questions.keys()):
-            ans = img_questions[question_id]
-            answer = ans['answer']
-            confidence = ans.get('confidence')
-            
-            # Get full question text if available
-            if question_id in question_full_text:
-                full_question = question_full_text[question_id]['text']
-            else:
-                full_question = ans.get('question', '')
-            
-            # Color code based on answer
-            if 'yes' in answer.lower() or 'safe' in answer.lower():
-                color = 'green'
-            elif 'no' in answer.lower() or 'wait' in answer.lower() or 'stop' in answer.lower():
-                color = 'red'
-            else:
-                color = 'black'
-            
-            conf_str = f" ({confidence:.2f})" if confidence is not None else ""
-            
-            popup_html += f"""
-                <tr style="border-bottom: 1px solid #ddd;">
-                    <td colspan="2" style="padding:4px 2px;">
-                        <span style="font-size:10px; color:#666;">{full_question}</span>
-                    </td>
-                    <td style="padding:4px 2px; color:{color};"><b>{answer}</b>{conf_str}</td>
-                </tr>
-            """
+        # First show level_1_primary if it exists (as a special section)
+        for category_name in sorted(category_answers.keys()):
+            if category_name.lower() in excluded_categories:
+                popup_html += f"""
+                <div style="margin:10px 0; padding:5px; border-left:4px solid #888; background-color:#f0f0f0;">
+                    <h5 style="margin:2px 0; color:#555;">Primary Assessment</h5>
+                    <table style="width:100%; font-size:11px; border-collapse: collapse;">
+                """
+                
+                # Add questions from this category
+                for question_id in sorted(img_questions.keys()):
+                    if question_to_category.get(question_id, 'unknown') == category_name:
+                        ans = img_questions[question_id]
+                        answer = ans['answer']
+                        confidence = ans.get('confidence')
+                        
+                        if question_id in question_full_text:
+                            full_question = question_full_text[question_id]['text']
+                        else:
+                            full_question = ans.get('question', '')
+                        
+                        # Color code based on answer
+                        if 'yes' in answer.lower() or 'safe' in answer.lower():
+                            color = 'green'
+                        elif 'no' in answer.lower() or 'wait' in answer.lower() or 'stop' in answer.lower():
+                            color = 'red'
+                        else:
+                            color = 'black'
+                        
+                        conf_str = f" ({confidence:.2f})" if confidence is not None else ""
+                        
+                        popup_html += f"""
+                            <tr style="border-bottom: 1px solid #ddd;">
+                                <td style="padding:4px 2px;">
+                                    <span style="font-size:10px; color:#666;">{full_question}</span>
+                                </td>
+                                <td style="padding:4px 2px; color:{color}; white-space:nowrap;"><b>{answer}</b>{conf_str}</td>
+                            </tr>
+                        """
+                
+                popup_html += """
+                    </table>
+                </div>
+                """
         
-        popup_html += """
-            </table>
-        </div>
-        """
+        # Then show topic categories (the ones used for coloring)
+        for category_name in sorted(category_answers.keys()):
+            if category_name.lower() not in excluded_categories:
+                category_color = category_colors.get(category_name, 'gray')
+                is_positive = category_name in positive_topic_categories
+                
+                popup_html += f"""
+                <div style="margin:10px 0; padding:5px; border-left:4px solid {category_color}; background-color:#f9f9f9;">
+                    <h5 style="margin:2px 0; color:{category_color};">{category_name.replace('_', ' ').title()} {'✓' if is_positive else ''}</h5>
+                    <table style="width:100%; font-size:11px; border-collapse: collapse;">
+                """
+                
+                # Add questions from this category
+                for question_id in sorted(img_questions.keys()):
+                    if question_to_category.get(question_id, 'unknown') == category_name:
+                        ans = img_questions[question_id]
+                        answer = ans['answer']
+                        confidence = ans.get('confidence')
+                        
+                        if question_id in question_full_text:
+                            full_question = question_full_text[question_id]['text']
+                        else:
+                            full_question = ans.get('question', '')
+                        
+                        # Color code based on answer
+                        if 'yes' in answer.lower() or 'safe' in answer.lower():
+                            color = 'green'
+                        elif 'no' in answer.lower() or 'wait' in answer.lower() or 'stop' in answer.lower():
+                            color = 'red'
+                        else:
+                            color = 'black'
+                        
+                        conf_str = f" ({confidence:.2f})" if confidence is not None else ""
+                        
+                        popup_html += f"""
+                            <tr style="border-bottom: 1px solid #ddd;">
+                                <td style="padding:4px 2px;">
+                                    <span style="font-size:10px; color:#666;">{full_question}</span>
+                                </td>
+                                <td style="padding:4px 2px; color:{color}; white-space:nowrap;"><b>{answer}</b>{conf_str}</td>
+                            </tr>
+                        """
+                
+                popup_html += """
+                    </table>
+                </div>
+                """
         
-        # Determine marker color based on answers
-        has_danger = any('no' in ans['answer'].lower() or 'wait' in ans['answer'].lower() 
-                        for ans in img_questions.values())
-        marker_color = 'red' if has_danger else 'green'
+        popup_html += "</div>"
+        
+        # Determine marker color based on ONLY topic categories (not level_1_primary)
+        if len(positive_topic_categories) == 0:
+            # No positive topic answers - use gray
+            marker_color = 'gray'
+            marker_icon = 'camera'
+        elif len(positive_topic_categories) == 1:
+            # Single positive category - use that category's color
+            marker_color = category_colors.get(list(positive_topic_categories)[0], 'green')
+            marker_icon = 'exclamation-circle'
+        else:
+            # Multiple positive categories - create a multi-colored marker effect
+            # Use the first category's color but with a special icon
+            sorted_categories = sorted(positive_topic_categories)
+            marker_color = category_colors.get(sorted_categories[0], 'green')
+            marker_icon = 'exclamation-triangle'
+        
+        # Create tooltip showing positive topic categories only
+        if positive_topic_categories:
+            tooltip_text = f"{img_name}\n✓ " + ", ".join(sorted(positive_topic_categories))
+        else:
+            tooltip_text = f"{img_name}\n○ No topic detections"
         
         # Add marker
         folium.Marker(
             location=[lat, lon],
             popup=folium.Popup(popup_html, max_width=450),
-            tooltip=img_name,
-            icon=folium.Icon(color=marker_color, icon='camera', prefix='fa')
+            tooltip=tooltip_text,
+            icon=folium.Icon(color=marker_color, icon=marker_icon, prefix='fa')
         ).add_to(m)
     
     # Add start and end markers
@@ -271,6 +389,35 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
             popup='End',
             icon=folium.Icon(color='purple', icon='stop', prefix='fa')
         ).add_to(m)
+    
+    # Add legend for topic categories only (exclude level_1_primary)
+    if category_colors:
+        legend_html = '''
+        <div style="position: fixed; 
+                    top: 10px; right: 10px; width: 220px; 
+                    background-color: white; z-index:9999; font-size:12px;
+                    border:2px solid grey; border-radius: 5px; padding: 10px;
+                    box-shadow: 0 0 15px rgba(0,0,0,0.2);">
+            <h4 style="margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;">Topic Categories</h4>
+        '''
+        for category, color in sorted(category_colors.items()):
+            # Format category name nicely
+            display_name = category.replace('_', ' ').title()
+            legend_html += f'''
+            <div style="margin: 5px 0; display: flex; align-items: center;">
+                <i class="fa fa-map-marker" style="color:{color}; font-size:18px; width:25px;"></i>
+                <span style="margin-left:5px; font-size:11px;">{display_name}</span>
+            </div>
+            '''
+        legend_html += '''
+            <hr style="margin:10px 0; border:none; border-top:1px solid #ddd;">
+            <div style="margin: 5px 0; display: flex; align-items: center;">
+                <i class="fa fa-map-marker" style="color:gray; font-size:18px; width:25px;"></i>
+                <span style="margin-left:5px; font-size:11px;">No Detections</span>
+            </div>
+        </div>
+        '''
+        m.get_root().html.add_child(folium.Element(legend_html))
     
     # Add layer control
     folium.LayerControl().add_to(m)
@@ -295,4 +442,3 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
         except Exception as e:
             print(f"Could not open browser automatically: {e}")
             print(f"Please open manually: {output_html_path}")
-

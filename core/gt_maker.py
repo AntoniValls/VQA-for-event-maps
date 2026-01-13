@@ -14,8 +14,130 @@ import json
 import cv2
 from PIL import Image
 from datetime import datetime
+import shutil
 
 from core.promptManager import PromptManager
+
+import shutil
+
+def select_keyframes_interactively_strided(
+    image_files,
+    target_count=20,
+    output_dir=None,
+    select_images=True,
+    window_name="Keyframe Selection"
+):
+    """
+    Select keyframes with one image per stride segment.
+
+    If select_images=True:
+        - Interactive selection
+        - Copies selected images to output_dir
+
+    If select_images=False:
+        - Loads images directly from output_dir
+        - No UI shown
+
+    Returns:
+        List[Path]: selected image paths (original paths if selecting,
+                    paths in output_dir if loading)
+    """
+    assert output_dir is not None, "output_dir must be provided"
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---------------------------------------------------------
+    # MODE 1: load already selected images
+    # ---------------------------------------------------------
+    if not select_images:
+        selected = sorted(
+            p for p in output_dir.iterdir()
+            if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+        )
+
+        if not selected:
+            raise RuntimeError(
+                f"select_images=False but no images found in {output_dir}"
+            )
+
+        print(f"Loaded {len(selected)} pre-selected images from {output_dir}")
+        return selected[:target_count]
+
+    # ---------------------------------------------------------
+    # MODE 2: interactive strided selection
+    # ---------------------------------------------------------
+    assert target_count > 0
+
+    total_images = len(image_files)
+    stride = total_images // target_count
+
+    selected = []
+
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 1280, 850)
+
+    for seg_idx in range(target_count):
+        start = seg_idx * stride
+        end = total_images if seg_idx == target_count - 1 else (seg_idx + 1) * stride
+        segment_images = image_files[start:end]
+
+        if not segment_images:
+            continue
+
+        print(f"\nSegment {seg_idx + 1}/{target_count} "
+              f"(frames {start}–{end - 1})")
+
+        kept_in_segment = False
+
+        for image_path in segment_images:
+            image = Image.open(image_path).convert("RGB")
+
+            text = (
+                f"Segment {seg_idx + 1}/{target_count}\n"
+                f"Frames {start}–{end - 1}\n"
+                f"Selected: {len(selected)}/{target_count}\n\n"
+                "K = keep (advance segment)\n"
+                "S = skip (next image)\n"
+                "Q = quit"
+            )
+
+            display_image_with_text(image, text, window_name)
+
+            while True:
+                key = cv2.waitKey(0) & 0xFF
+
+                if key in (ord("k"), ord("K")):
+                    selected.append(image_path)
+
+                    dst = output_dir / image_path.name
+                    if not dst.exists():
+                        shutil.copy2(image_path, dst)
+
+                    print(f"[KEEP] {image_path.name}")
+                    kept_in_segment = True
+                    break
+
+                elif key in (ord("s"), ord("S")):
+                    print(f"[SKIP] {image_path.name}")
+                    break
+
+                elif key in (ord("q"), ord("Q")):
+                    print("Selection aborted early.")
+                    cv2.destroyAllWindows()
+                    return selected
+
+            if kept_in_segment:
+                break
+
+        if not kept_in_segment:
+            print("⚠ No image selected in this segment.")
+
+    cv2.destroyAllWindows()
+
+    print(f"\nFinal selection: {len(selected)} images")
+    print(f"Copied to: {output_dir}")
+    return selected
 
 def display_image_with_text(image, text, window_name="Ground Truth Labeling"):
     """
@@ -65,10 +187,40 @@ def load_existing_labels(output_path):
         except Exception as e:
             print(f"Warning: Error reading existing labels: {e}")
     
-    return labeled_images
+    return 
+    
+def load_existing_labels_by_image_and_question(output_path):
+    """
+    Returns:
+        dict[str, set[str]]: image_name -> set(question_id)
+    """
+    labels = {}
+
+    if not os.path.exists(output_path):
+        return labels
+
+    with open(output_path, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                obj = json.loads(line.strip())
+                img = obj.get("image_name")
+                qid = obj.get("question_id")
+                if img and qid:
+                    labels.setdefault(img, set()).add(qid)
+            except json.JSONDecodeError:
+                continue
+
+    return labels
 
 
-def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num_keyframes=20, override_existing=False):
+def create_ground_truth_labels(
+    input_dir, 
+    prompt_preset="full_hierarchical", 
+    num_keyframes=20, 
+    override_existing=False, 
+    select_images=False, 
+    patch_questions=None):
+
     """
     Manual ground truth labeling tool.
     
@@ -77,10 +229,15 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
         prompt_preset: Question preset to use
         num_keyframes: Number of images to label
         override_existing: If True, re-label already labeled images. If False, skip them.
+        patch_questions:
+        - None → normal behavior
+        - set(question_id) → only ask missing questions in this set
     """
-    import numpy as np
     
+    # ------------------------------------------------------------------
     # Setup paths
+    # ------------------------------------------------------------------
+
     image_dir = os.path.join(input_dir, "images")
     output_path = os.path.join(input_dir, "ground_truth_labels.jsonl")
     
@@ -91,45 +248,72 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
     print(f"Output: {output_path}")
     print(f"Preset: {prompt_preset}")
     print(f"Override existing: {override_existing}")
+    print(f"Patch mode: {patch_questions is not None}")
+    if patch_questions:
+        print(f"Patching questions: {patch_questions}")
     print(f"="*70)
     
+    # ------------------------------------------------------------------
     # Load existing labels
-    already_labeled = set()
-    if not override_existing and os.path.exists(output_path):
-        already_labeled = load_existing_labels(output_path)
-        if already_labeled:
-            print(f"\nFound {len(already_labeled)} already labeled images (will skip)")
-        else:
-            print(f"\nNo existing labels found (starting fresh)")
-    elif override_existing and os.path.exists(output_path):
-        print(f"\nWARNING: Override mode enabled - will re-label existing images")
+    # ------------------------------------------------------------------
+    existing_labels = load_existing_labels_by_image_and_question(output_path)
+    if os.path.exists(output_path) and not override_existing:
+        existing_labels = load_existing_labels_by_image_and_question(output_path)
+
+    # ------------------------------------------------------------------
+    # Prepare output file
+    # ------------------------------------------------------------------
+    if override_existing:
+        print("⚠ Override mode enabled: existing labels will be replaced")
         response = input("Continue? (y/n): ").strip().lower()
-        if response not in ['y', 'yes']:
+        if response not in {"y", "yes"}:
             print("Aborted.")
             return 1
+        write_mode = "w"
     else:
-        print(f"\nNo existing labels file found (starting fresh)")
+        write_mode = "a"
     
-    # Get image files
-    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+    # ------------------------------------------------------------------
+    # Collect images
+    # ------------------------------------------------------------------
+    image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
     image_files = []
     for ext in image_extensions:
         image_files.extend(Path(image_dir).glob(f"*{ext}"))
         image_files.extend(Path(image_dir).glob(f"*{ext.upper()}"))
-    
+
     image_files = sorted(image_files)
-    
     if not image_files:
-        print(f"No images found in {image_dir}")
+        print("No images found.")
         return 1
     
     print(f"Found {len(image_files)} images")
     
-    # Calculate stride
-    frame_stride = max(1, int(len(image_files) / num_keyframes))
-    print(f"Will label every {frame_stride} image(s) → ~{len(range(0, len(image_files), frame_stride))} images\n")
-    
+    # ------------------------------------------------------------------
+    # Select keyframes
+    # ------------------------------------------------------------------
+    selected_dir = os.path.join(input_dir, "images_selected")
+
+    # If no images in the folder trigger select_images=True
+    if not os.path.isdir(selected_dir) or sum(1 for p in Path(selected_dir).iterdir() if p.is_file()) != num_keyframes:
+        select_images = True
+        print("Not enough selected images in the cache. Triggering selection")
+
+    print("\nSelecting strided keyframes interactively...")
+    selected_images = select_keyframes_interactively_strided(
+        image_files=image_files,
+        target_count=num_keyframes,
+        output_dir=selected_dir,
+        select_images=select_images
+    )
+
+    if not selected_images:
+        print("No images selected. Exiting.")
+        return 1
+
+    # ------------------------------------------------------------------
     # Load prompts
+    # ------------------------------------------------------------------
     prompt_json_path = "../inout/vqa_prompts.json"
     prompt_manager = PromptManager(str(prompt_json_path), preset=prompt_preset)
     prompt_manager.print_hierarchy_info()
@@ -151,24 +335,17 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
     cv2.resizeWindow("Ground Truth Labeling", 1280, 850)
     
     # Track progress
-    labeled_count = 0
-    skipped_count = 0
+    labeled_count = 0 
+    skipped_count = 0 
     already_labeled_count = 0
-    
+   
     try:
-        # Determine write mode
-        write_mode = "w" if override_existing else "a"
-        
         with open(output_path, write_mode, encoding="utf-8") as f:
-            for idx, image_path in enumerate(image_files):
-                if idx % frame_stride != 0:
-                    continue
-                
-                # Check if already labeled
-                if not override_existing and image_path.name in already_labeled:
-                    already_labeled_count += 1
-                    print(f"\n[SKIP] Image {idx+1}/{len(image_files)}: {image_path.name} (already labeled)")
-                    continue
+            for idx, image_path in enumerate(selected_images):
+                original_index = image_files.index(image_path.parent.parent / "images" / image_path.name)
+
+                # Get the image already answered questions
+                answered = existing_labels.get(image_path.name, set())
                 
                 # Load image
                 try:
@@ -179,26 +356,42 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
                 
                 # Reset for new image
                 prompt_manager.reset_answer_history()
+                initial_prompts = prompt_manager.get_initial_prompts()
                 image_labels = []
                 skip_image = False
-                
+
+                # ----------------------------------------------------------
+                # Determine which questions to ask
+                # ----------------------------------------------------------
+                if patch_questions is not None:
+                    # Patch or redo only selected questions
+                    initial_prompts = [
+                        q for q in initial_prompts
+                        if q["id"] in patch_questions
+                        and (override_existing or q["id"] not in answered)
+                    ]
+                elif not override_existing:
+                    # Normal incremental mode
+                    initial_prompts = [
+                        q for q in initial_prompts
+                        if q["id"] not in answered
+                    ]
+
+                if not initial_prompts:
+                    continue
+
                 print(f"\n{'='*70}")
-                print(f"IMAGE {idx+1}/{len(image_files)}: {image_path.name}")
-                print(f"Progress: {labeled_count} labeled, {skipped_count} skipped, {already_labeled_count} already done")
+                print(f"IMAGE {original_index+1}/{len(image_files)}: {image_path.name}")
                 print(f"{'='*70}\n")
                 
-                initial_prompts = prompt_manager.get_initial_prompts()
-                
                 for q_num, question_data in enumerate(initial_prompts, 1):
-                    if skip_image:
-                        break
                     
                     question_id = question_data['id']
                     question_text = question_data['text']
                     short_label = prompt_manager.get_short_label(question_data)
                     
                     # Display image with question
-                    display_text = f"Question {q_num}/{len(initial_prompts)}: {short_label}\n{question_text}\n\nPress: Y=Yes | N=No | S=Skip | Q=Quit"
+                    display_text = f"Image: {20-len(selected_images)+idx+1}/20, Question {q_num}/{len(initial_prompts)}: {short_label}\n{question_text}\n\nPress: Y=Yes | N=No | S=Skip | Q=Quit"
                     display_image_with_text(image, display_text, "Ground Truth Labeling")
                     
                     # Get answer
@@ -229,7 +422,7 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
                     label_obj = {
                         "image_path": str(image_path),
                         "image_name": image_path.name,
-                        "image_index": idx,
+                        "image_index": original_index,
                         "question_id": question_id,
                         "question": question_text,
                         "answer": answer,
@@ -338,7 +531,7 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
                                             ffollowup_label_obj = {
                                                 "image_path": str(image_path),
                                                 "image_name": image_path.name,
-                                                "image_index": idx,
+                                                "image_index": original_index,
                                                 "question_id": ffollowup_id,
                                                 "question": ffollowup_text,
                                                 "answer": ffollowup_answer,
@@ -378,14 +571,23 @@ def create_ground_truth_labels(input_dir, prompt_preset="full_hierarchical", num
     
     return 0
 
-
 if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
-    CONTINENT = "America"
-    CITY = "BuenosAires"
+    CONTINENT = "Asia"
+    CITY = "Tokio1"
     NUM_KEYFRAMES = 20  # Number of images to label
-    OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
+    OVERRIDE_EXISTING = True  # Set to True to re-label already labeled images
+    SELECT_IMAGES = False
+    PATCH_QUESTIONS = None
+
+    """
+    override_existing	patch_questions	        Behavior
+        False	               None	        Normal incremental labeling
+        False	               set(...)	    Patch only missing questions
+        True	               None	        Full re-label all questions
+        True	               set(...)	    Redo only those questions for all images"""
+
     # =======================================
     
     print(f"="*70)
@@ -398,5 +600,7 @@ if __name__ == "__main__":
     
     input_directory = f"../data/{CONTINENT}/{CITY}"
     
-    exit_code = create_ground_truth_labels(input_directory, PROMPT_PRESET, NUM_KEYFRAMES, OVERRIDE_EXISTING)
+    exit_code = create_ground_truth_labels(input_directory, PROMPT_PRESET, NUM_KEYFRAMES, OVERRIDE_EXISTING, False, PATCH_QUESTIONS)
     sys.exit(exit_code)
+
+    # Rerun sittings question

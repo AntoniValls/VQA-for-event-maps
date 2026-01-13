@@ -6,7 +6,6 @@ if str(ROOT) not in sys.path:
 
 import os
 import json
-import pyzed.sl as sl
 
 import cv2
 from PIL import Image
@@ -219,6 +218,8 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
 
 
 def fromSVO(svo_input_path, output_dir, model_name, prompt_preset, frame_stride):
+    import pyzed.sl as sl
+
     """Main processing function for SVO files."""
     # Device setup
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -330,7 +331,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
     print(f"Using device: {device} (dtype: {base_dtype})")
     
     # I/O setup
-    image_dir = os.path.join(input_dir, "images")
+    image_dir = os.path.join(input_dir, "selected_images")
     if generate_map:
         gps_csv_path = os.path.join(input_dir, "gps_positions.csv")
     answers_folder = os.path.join(input_dir,f"results/{model_name}")
@@ -465,21 +466,21 @@ if __name__ == "__main__":
 
     # From Images 
     # ============ CONFIGURATION ============
-    MODEL = "instructblip"  # Options: vilt, blip2, blip2-large, llava, instructblip
-    PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
-    CONTINENT = "America"
-    CITY = "BuenosAires"
-    # =======================================
-    
-    print(f"="*70)
-    print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
-    print(f"="*70)
-    print(f"Model: {MODEL}")
-    print(f"Preset: {PROMPT_PRESET}")
-    print(f"City: {CITY}, {CONTINENT}")
-    print(f"="*70)
+    for model in ["llava", "instructblip", "qwen-vl", "vilt"]:
+        MODEL = model  # Options: vilt, blip2, blip2-large, llava, instructblip
+        PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
+        CONTINENT = "America"
+        CITY = "NewYork"
+        # =======================================
+        
+        print(f"="*70)
+        print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
+        print(f"="*70)
+        print(f"Model: {MODEL}")
+        print(f"Preset: {PROMPT_PRESET}")
+        print(f"City: {CITY}, {CONTINENT}")
+        print(f"="*70)
 
-    image_dir = f"../data/{CONTINENT}/{CITY}"
-    
-    exit_code = fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True, evaluate=True)
-    sys.exit(exit_code)
+        image_dir = f"../data/{CONTINENT}/{CITY}"
+        
+        fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True, evaluate=True)

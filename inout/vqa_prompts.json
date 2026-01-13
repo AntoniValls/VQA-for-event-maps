@@ -11,6 +11,15 @@
       "name": "Level 1: Primary Scene Assessment",
       "description": "Core questions asked for every frame - trigger conditional questions",
       "questions": [
+          {
+          "id": "q_pedestrian_not_on_sidewalk",
+          "text": "Is the pedestrian currently outside a designated sidewalk or pedestrian path?",
+          "topic": "Pedestrian - Location",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "short_label": "Outside Ped Path",
+          "enabled": true
+        },
         {
           "id": "q_crossing_nearby",
           "text": "Is there a street crossing within the next 10 meters?",
@@ -40,7 +49,7 @@
         },
         {
           "id": "q_obstacle_blocking",
-          "text": "Is any obstacle blocking part of the direct path ahead?",
+          "text": "Is any static or movable object (not a person) blocking part of the direct path ahead?",
           "topic": "Obstacle Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -73,14 +82,31 @@
           "choices": ["Yes", "No"],
           "short_label": "Surface Defects",
           "enabled": true
-        },
+        }
+      ]
+    },
+    "pedestrian_position_details": {
+      "name": "Pedestrian Position & Context",
+      "description": "Questions describing the pedestrian’s exact location and ground type",
+      "questions": [
         {
-          "id": "q_visibility_reduced",
-          "text": "Is visibility reduced (darkness, glare, or shadows)?",
-          "topic": "Visibility Detection",
+          "id": "q_pedestrian_on_road",
+          "text": "Is the pedestrian on the roadway or street surface?",
+          "topic": "Pedestrian - Location",
           "type": "boolean",
           "choices": ["Yes", "No"],
-          "short_label": "Reduced Visibility",
+          "dependency": "q_pedestrian_not_on_sidewalk",
+          "short_label": "On Road",
+          "enabled": true
+        },
+        {
+          "id": "q_pedestrian_on_grass",
+          "text": "Is the pedestrian walking on grass, dirt, or an unpaved surface?",
+          "topic": "Pedestrian - Surface Type",
+          "type": "boolean",
+          "choices": ["Yes", "No"],
+          "dependency": "q_pedestrian_not_on_sidewalk",
+          "short_label": "On Grass",
           "enabled": true
         }
       ]
@@ -238,13 +264,13 @@
       "description": "Conditional questions when obstacle is detected",
       "questions": [
         {
-          "id": "q_obstacle_is_person",
-          "text": "Is there a person blocking or on the path?",
-          "topic": "Obstacle - Type Person",
+          "id": "q_obstacle_upcoming_step",
+          "text": "Is there an upcoming step or change in ground level on the path (e.g., curb, sidewalk transition, tilted manhole cover)?",
+          "topic": "Obstacle - Type Level Change",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_obstacle_blocking",
-          "short_label": "Person",
+          "short_label": "Step / Level Change",
           "enabled": true
         },
         {
@@ -269,22 +295,12 @@
         },
         {
           "id": "q_obstacle_fixed_infrastructure",
-          "text": "Are there fixed infrastructure obstacles on the path (stairs, railings, traffic signs, streetlights)?",
+          "text": "Are there fixed infrastructure obstacles on the path (stairs, railings, traffic signs, streetlights, trees)?",
           "topic": "Obstacle - Type Fixed",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_obstacle_blocking",
           "short_label": "Fixed Infrastructure",
-          "enabled": true
-        },
-        {
-          "id": "q_obstacle_natural",
-          "text": "Are there natural obstacles on the path (trees, vegetation, rocks)?",
-          "topic": "Obstacle - Type Natural",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_obstacle_blocking",
-          "short_label": "Natural Obstacles",
           "enabled": true
         },
         {
@@ -421,7 +437,7 @@
         },
         {
           "id": "q_motor_vehicle_blocking",
-          "text": "Is the car, truck or bus blocking the pedestrian path?",
+          "text": "Is the car, truck or bus on the sidewalk?",
           "topic": "Vehicle - Motor Blockage",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -496,32 +512,6 @@
           "enabled": true
         }
       ]
-    },
-    "visibility_details": {
-      "name": "Visibility Questions",
-      "description": "Conditional questions when visibility is reduced",
-      "questions": [
-        {
-          "id": "q_visibility_shadows",
-          "text": "Are shadows covering the path ahead?",
-          "topic": "Visibility - Shadows",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_visibility_reduced",
-          "short_label": "Shadows",
-          "enabled": true
-        },
-        {
-          "id": "q_visibility_wrong",
-          "text": "Is the image obstructed, blurred, or improperly exposed?",
-          "topic": "Visibility - Wrong",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_visibility_reduced",
-          "short_label": "Bad Image",
-          "enabled": true
-        }
-      ]
     }
   },
   "prompt_presets": {
@@ -535,8 +525,7 @@
         "q_obstacle_blocking",
         "q_pedestrians_present",
         "q_vehicle_nearby",
-        "q_surface_hazardous",
-        "q_visibility_reduced"
+        "q_surface_hazardous"
       ]
     },
     "crossing": {
@@ -579,11 +568,10 @@
       "description": "Level 1 + all obstacle detail questions",
       "enabled_questions": [
         "q_obstacle_blocking",
-        "q_obstacle_is_person",
+        "q_obstacle_upcoming_step",
         "q_obstacle_is_vehicle",
         "q_obstacle_movable_objects",
         "q_obstacle_fixed_infrastructure",
-        "q_obstacle_natural",
         "q_obstacle_blocks_half",
         "q_obstacle_space_around",
         "q_obstacle_overhead",
@@ -627,16 +615,6 @@
         "q_surface_overhead_hazard"
       ]
     },
-    "visibility": {
-      "name": "Visibility Assessment",
-      "description": "Level 1 + all visibility detail questions",
-      "enabled_questions": [
-        "q_visibility_reduced",
-        "q_visibility_nighttime",
-        "q_visibility_glare",
-        "q_visibility_shadows"
-      ]
-    },
     "full_hierarchical": {
       "name": "Full Hierarchical Assessment",
       "description": "All questions - Level 1 triggers appropriate Level 2 questions",
@@ -647,14 +625,14 @@
     "description": "Visual map of question dependencies for reference",
     "structure": {
       "level_1_triggers": {
+        "q_pedestrian_not_on_sidewalk": ["q_pedestrian_on_road", "q_pedestrian_on_grass"],
         "q_crossing_nearby": ["q_crossing_signal_present", "q_crossing_vehicles_present", "q_crossing_marked", "q_crossing_others_waiting"],
         "q_stairs_visible": ["q_stairs_upward", "q_stairs_handrail", "q_stairs_only_option"],
         "q_construction_visible": ["q_construction_barriers", "q_construction_equipment", "q_construction_overhead", "q_construction_pathway_detour"],
-        "q_obstacle_blocking": ["q_obstacle_is_person", "q_obstacle_is_vehicle", "q_obstacle_movable_objects", "q_obstacle_fixed_infrastructure", "q_obstacle_natural", "q_obstacle_blocks_half", "q_obstacle_space_around", "q_obstacle_overhead", "q_obstacle_seating"],
+        "q_obstacle_blocking": ["q_obstacle_upcoming_step", "q_obstacle_is_vehicle", "q_obstacle_movable_objects", "q_obstacle_fixed_infrastructure", "q_obstacle_blocks_half", "q_obstacle_space_around", "q_obstacle_overhead", "q_obstacle_seating"],
         "q_pedestrians_present": ["q_crowding_more_than_five", "q_crowding_same_direction", "q_crowding_path_reduced"],
         "q_vehicle_nearby": ["q_vehicle_is_bicycle", "q_vehicle_is_car_truck_bus", "q_vehicle_is_motorcycle"],
-        "q_surface_hazardous": ["q_surface_water_ice", "q_surface_sloped", "q_surface_cracks_holes", "q_surface_overhead_hazard"],
-        "q_visibility_reduced": ["q_visibility_nighttime", "q_visibility_glare", "q_visibility_shadows"]
+        "q_surface_hazardous": ["q_surface_water_ice", "q_surface_sloped", "q_surface_cracks_holes", "q_surface_overhead_hazard"]
       },
       "level_2_triggers": {
         "q_crossing_signal_present": ["q_crossing_signal_red_green"],
