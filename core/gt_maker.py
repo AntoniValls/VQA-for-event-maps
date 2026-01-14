@@ -95,7 +95,7 @@ def select_keyframes_interactively_strided(
 
             text = (
                 f"Segment {seg_idx + 1}/{target_count}\n"
-                f"Frames {start}–{end - 1}\n"
+                f"Frames {start}-{end - 1}\n"
                 f"Selected: {len(selected)}/{target_count}\n\n"
                 "K = keep (advance segment)\n"
                 "S = skip (next image)\n"
@@ -357,6 +357,7 @@ def create_ground_truth_labels(
                 # Reset for new image
                 prompt_manager.reset_answer_history()
                 initial_prompts = prompt_manager.get_initial_prompts()
+
                 image_labels = []
                 skip_image = False
 
@@ -384,16 +385,26 @@ def create_ground_truth_labels(
                 print(f"IMAGE {original_index+1}/{len(image_files)}: {image_path.name}")
                 print(f"{'='*70}\n")
                 
-                for q_num, question_data in enumerate(initial_prompts, 1):
-                    
+                q_idx = 0
+                while q_idx < len(initial_prompts):
+                    question_data = initial_prompts[q_idx]
+                    q_num = q_idx + 1
+
                     question_id = question_data['id']
                     question_text = question_data['text']
                     short_label = prompt_manager.get_short_label(question_data)
                     
                     # Display image with question
-                    display_text = f"Image: {20-len(selected_images)+idx+1}/20, Question {q_num}/{len(initial_prompts)}: {short_label}\n{question_text}\n\nPress: Y=Yes | N=No | S=Skip | Q=Quit"
+                    display_text = (
+                        f"Image: {20-len(selected_images)+idx+1}/20, Question {q_num}/{len(initial_prompts)}: {short_label}\n"
+                        f"{question_text}\n\n"
+                        f"Press: Y=Yes | N=No | B=Back | S=Skip | Q=Quit"
+                    )
                     display_image_with_text(image, display_text, "Ground Truth Labeling")
                     
+                    answer = None
+                    go_back = False
+
                     # Get answer
                     while True:
                         key = cv2.waitKey(0) & 0xFF
@@ -406,6 +417,18 @@ def create_ground_truth_labels(
                             answer = "no"
                             print(f"  [{q_num}/{len(initial_prompts)}] {short_label}: NO")
                             break
+                        elif key in (ord('b'), ord('B')):
+                            if q_idx > 0:
+                                print(f"\n  <<< GOING BACK TO PREVIOUS QUESTION <<<\n")
+                                q_idx -= 1
+                                # Remove all labels associated with the PREVIOUS question 
+                                # (including its follow-ups) from our current session list
+                                prev_q_id = initial_prompts[q_idx]['id']
+                                image_labels = [l for l in image_labels if l.get('question_id') != prev_q_id and l.get('parent_question') != prev_q_id]
+                                go_back = True
+                                break
+                            else:
+                                print("  Already at the first question.")
                         elif key == ord('s') or key == ord('S'):
                             print(f"\n  >>> SKIPPING IMAGE <<<\n")
                             skip_image = True
@@ -417,6 +440,8 @@ def create_ground_truth_labels(
                     
                     if skip_image:
                         break
+                    if go_back:
+                        continue # Restart the loop with the decremented q_idx
                     
                     # Store label
                     label_obj = {
@@ -476,7 +501,7 @@ def create_ground_truth_labels(
                                 followup_label_obj = {
                                     "image_path": str(image_path),
                                     "image_name": image_path.name,
-                                    "image_index": idx,
+                                    "image_index": original_index,
                                     "question_id": followup_id,
                                     "question": followup_text,
                                     "answer": followup_answer,
@@ -546,7 +571,9 @@ def create_ground_truth_labels(
                                             break
                             if skip_image:
                                 break
-                
+                    
+                    q_idx += 1  # Advance to next primary question
+
                 # Save labels for this image
                 if not skip_image:
                     for label in image_labels:
@@ -574,10 +601,10 @@ def create_ground_truth_labels(
 if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
-    CONTINENT = "Asia"
-    CITY = "Tokio1"
+    CONTINENT = "Europe"
+    CITY = "Barcelona/02"
     NUM_KEYFRAMES = 20  # Number of images to label
-    OVERRIDE_EXISTING = True  # Set to True to re-label already labeled images
+    OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
     SELECT_IMAGES = False
     PATCH_QUESTIONS = None
 
@@ -600,7 +627,7 @@ if __name__ == "__main__":
     
     input_directory = f"../data/{CONTINENT}/{CITY}"
     
-    exit_code = create_ground_truth_labels(input_directory, PROMPT_PRESET, NUM_KEYFRAMES, OVERRIDE_EXISTING, False, PATCH_QUESTIONS)
+    exit_code = create_ground_truth_labels(input_directory, PROMPT_PRESET, NUM_KEYFRAMES, OVERRIDE_EXISTING, SELECT_IMAGES, PATCH_QUESTIONS)
     sys.exit(exit_code)
 
     # Rerun sittings question

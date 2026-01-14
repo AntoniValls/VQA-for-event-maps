@@ -100,13 +100,13 @@
           "enabled": true
         },
         {
-          "id": "q_pedestrian_on_grass",
+          "id": "q_pedestrian_on_unpaved",
           "text": "Is the pedestrian walking on grass, dirt, or an unpaved surface?",
           "topic": "Pedestrian - Surface Type",
           "type": "boolean",
           "choices": ["Yes", "No"],
           "dependency": "q_pedestrian_not_on_sidewalk",
-          "short_label": "On Grass",
+          "short_label": "On Unpaved",
           "enabled": true
         }
       ]
@@ -285,7 +285,7 @@
         },
         {
           "id": "q_obstacle_movable_objects",
-          "text": "Are there movable objects on the path (furniture, bins, planters)?",
+          "text": "Are there movable objects on the path (furniture, planters, or loose items)?",
           "topic": "Obstacle - Type Movable",
           "type": "boolean",
           "choices": ["Yes", "No"],
@@ -625,7 +625,7 @@
     "description": "Visual map of question dependencies for reference",
     "structure": {
       "level_1_triggers": {
-        "q_pedestrian_not_on_sidewalk": ["q_pedestrian_on_road", "q_pedestrian_on_grass"],
+        "q_pedestrian_not_on_sidewalk": ["q_pedestrian_on_road", "q_pedestrian_on_unpaved"],
         "q_crossing_nearby": ["q_crossing_signal_present", "q_crossing_vehicles_present", "q_crossing_marked", "q_crossing_others_waiting"],
         "q_stairs_visible": ["q_stairs_upward", "q_stairs_handrail", "q_stairs_only_option"],
         "q_construction_visible": ["q_construction_barriers", "q_construction_equipment", "q_construction_overhead", "q_construction_pathway_detour"],
