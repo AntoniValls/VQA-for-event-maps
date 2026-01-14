@@ -6,4 +6,5 @@ config/smartphone_ip_address.txt
 *.png
 *.svo2
 *.csv
+*.html
 *.json
