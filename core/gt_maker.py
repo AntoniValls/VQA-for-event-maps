@@ -602,14 +602,14 @@ if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
     CONTINENT = "Europe"
-    CITY = "Barcelona/02"
+    CITY = "Barcelona/07"
     NUM_KEYFRAMES = 20  # Number of images to label
     OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
     SELECT_IMAGES = False
     PATCH_QUESTIONS = None
 
     """
-    override_existing	patch_questions	        Behavior
+    override_existing	patch_questions	    Behavior
         False	               None	        Normal incremental labeling
         False	               set(...)	    Patch only missing questions
         True	               None	        Full re-label all questions
