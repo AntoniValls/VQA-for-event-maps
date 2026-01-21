@@ -602,7 +602,7 @@ if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
     CONTINENT = "Europe"
-    CITY = "Barcelona/07"
+    CITY = "10"
     NUM_KEYFRAMES = 20  # Number of images to label
     OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
     SELECT_IMAGES = False

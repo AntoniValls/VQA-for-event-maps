@@ -331,7 +331,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
     print(f"Using device: {device} (dtype: {base_dtype})")
     
     # I/O setup
-    image_dir = os.path.join(input_dir, "selected_images")
+    image_dir = os.path.join(input_dir, "images_selected")
     if generate_map:
         gps_csv_path = os.path.join(input_dir, "gps_positions.csv")
     answers_folder = os.path.join(input_dir,f"results/{model_name}")
@@ -365,10 +365,10 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
     # Initialize model
     vqa_model = VQAModel(model_name, device=device, dtype=base_dtype)
     
-    # Create window
-    if not generate_map:
-        cv2.namedWindow("VQA Results", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("VQA Results", 1280, 720)
+    # # Create window
+    # if not generate_map:
+    #     cv2.namedWindow("VQA Results", cv2.WINDOW_NORMAL)
+    #     cv2.resizeWindow("VQA Results", 1280, 720)
     
     print(f"\nProcessing {len(image_files)} images\n")
     
@@ -401,20 +401,20 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
                         ans_f.write(json.dumps(result_obj) + "\n")
                     ans_f.flush()
                     
-                    if not generate_map:
-                        print(f"\n{'='*70}")
-                        print(f"Processed {len(result_objects)} total questions")
-                        print("Press any key to continue (or 'q' to quit)...")
+                    # if not generate_map:
+                    #     print(f"\n{'='*70}")
+                    #     print(f"Processed {len(result_objects)} total questions")
+                    #     print("Press any key to continue (or 'q' to quit)...")
                         
-                        # Display frame
-                        display_frame = create_display_frame(image, idx, answers_dict, model_name)
-                        cv2.imshow("VQA Results", display_frame)
-                        key = cv2.waitKey(0)
+                    #     # Display frame
+                    #     display_frame = create_display_frame(image, idx, answers_dict, model_name)
+                    #     cv2.imshow("VQA Results", display_frame)
+                    #     key = cv2.waitKey(0)
                         
-                        # Check for quit
-                        if key == ord('q') or key == ord('Q'):
-                            print("\nQuitting...")
-                            break
+                    #     # Check for quit
+                    #     if key == ord('q') or key == ord('Q'):
+                    #         print("\nQuitting...")
+                    #         break
                 
                 # Progress bar
                 progress_bar((idx + 1) / max(1, len(image_files)) * 100, 30)
@@ -466,21 +466,31 @@ if __name__ == "__main__":
 
     # From Images 
     # ============ CONFIGURATION ============
-    for model in ["llava", "instructblip", "qwen-vl", "vilt"]:
-        MODEL = model  # Options: vilt, blip2, blip2-large, llava, instructblip
-        PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
-        CONTINENT = "America"
-        CITY = "NewYork"
-        # =======================================
-        
-        print(f"="*70)
-        print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
-        print(f"="*70)
-        print(f"Model: {MODEL}")
-        print(f"Preset: {PROMPT_PRESET}")
-        print(f"City: {CITY}, {CONTINENT}")
-        print(f"="*70)
+    models = ["llava", "instructblip", "qwen-vl", "vilt"]
+    continent_city = {
+                    #"America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
+                    #"Europe": ["London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08"],
+                    #"Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
+                    "Africa": [#"Kampala", "Lusaka",
+                         "Marrakesh"]
+                      }
+    for continent, cities in continent_city.items():
+        for city in cities:
+            for model in models:
+                MODEL = model  # Options: vilt, blip2, blip2-large, llava, instructblip
+                PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
+                CONTINENT = continent
+                CITY = city  # Use the current city in the list
+                # =======================================
+                
+                print(f"="*70)
+                print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
+                print(f"="*70)
+                print(f"Model: {MODEL}")
+                print(f"Preset: {PROMPT_PRESET}")
+                print(f"City: {CITY}, {CONTINENT}")
+                print(f"="*70)
 
-        image_dir = f"../data/{CONTINENT}/{CITY}"
-        
-        fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True, evaluate=True)
+                image_dir = f"../data/{CONTINENT}/{CITY}"
+                
+                fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=False, evaluate=True)

@@ -275,7 +275,7 @@
         },
         {
           "id": "q_obstacle_is_vehicle",
-          "text": "Is there a vehicle blocking or on the path?",
+          "text": "Is there a vehicle blocking the sidewalk?",
           "topic": "Obstacle - Type Vehicle",
           "type": "boolean",
           "choices": ["Yes", "No"],
