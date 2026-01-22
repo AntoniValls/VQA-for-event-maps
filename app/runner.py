@@ -362,10 +362,11 @@ if __name__ == "__main__":
     models = ["llava", "instructblip", "qwen-vl", "vilt"]
     continent_city = {
                     #"America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
-                    #"Europe": ["London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08"],
+                    "Europe": [
+                        #"London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
+                        "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"]
                     #"Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    "Africa": [#"Kampala", "Lusaka",
-                         "Marrakesh"]
+                    #"Africa": [#"Kampala", "Lusaka", "Marrakesh"]
                       }
     for continent, cities in continent_city.items():
         for city in cities:
