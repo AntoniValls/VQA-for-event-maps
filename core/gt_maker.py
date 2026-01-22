@@ -2,6 +2,7 @@
 Script for creating the ground-truth labels of the sequences
 """
 
+import copy
 from pathlib import Path
 import sys
 ROOT = Path(__file__).resolve().parents[1]
@@ -338,6 +339,7 @@ def create_ground_truth_labels(
     labeled_count = 0 
     skipped_count = 0 
     already_labeled_count = 0
+    previous_image_labels = None 
    
     try:
         with open(output_path, write_mode, encoding="utf-8") as f:
@@ -360,6 +362,7 @@ def create_ground_truth_labels(
 
                 image_labels = []
                 skip_image = False
+                repeat_previous = False
 
                 # ----------------------------------------------------------
                 # Determine which questions to ask
@@ -389,16 +392,18 @@ def create_ground_truth_labels(
                 while q_idx < len(initial_prompts):
                     question_data = initial_prompts[q_idx]
                     q_num = q_idx + 1
-
                     question_id = question_data['id']
                     question_text = question_data['text']
                     short_label = prompt_manager.get_short_label(question_data)
                     
+                    # Add "R=Repeat" to the UI hint only on the first question if history exists
+                    repeat_hint = " | R=Repeat Prev" if (q_idx == 0 and previous_image_labels) else ""
+
                     # Display image with question
                     display_text = (
-                        f"Image: {20-len(selected_images)+idx+1}/20, Question {q_num}/{len(initial_prompts)}: {short_label}\n"
+                        f"Image: {idx+1}/{len(selected_images)}, Question {q_num}/{len(initial_prompts)}: {short_label}\n"
                         f"{question_text}\n\n"
-                        f"Press: Y=Yes | N=No | B=Back | S=Skip | Q=Quit"
+                        f"Press: Y=Yes | N=No | B=Back | S=Skip | Q=Quit{repeat_hint}"
                     )
                     display_image_with_text(image, display_text, "Ground Truth Labeling")
                     
@@ -409,7 +414,21 @@ def create_ground_truth_labels(
                     while True:
                         key = cv2.waitKey(0) & 0xFF
                         
-                        if key == ord('y') or key == ord('Y'):
+                        # --- REPEAT LOGIC ---
+                        if key in (ord('r'), ord('R')) and q_idx == 0 and previous_image_labels:
+                            print(f"  >>> REPEATING PREVIOUS ANSWERS for {image_path.name} <<<")
+                            # Clone previous labels but update image-specific info
+                            image_labels = copy.deepcopy(previous_image_labels)
+                            for label in image_labels:
+                                label["image_path"] = str(image_path)
+                                label["image_name"] = image_path.name
+                                label["image_index"] = original_index
+                                label["timestamp"] = datetime.now().isoformat()
+                            
+                            repeat_previous = True
+                            break
+
+                        elif key == ord('y') or key == ord('Y'):
                             answer = "yes"
                             print(f"  [{q_num}/{len(initial_prompts)}] {short_label}: YES")
                             break
@@ -438,7 +457,7 @@ def create_ground_truth_labels(
                             cv2.destroyAllWindows()
                             return 0
                     
-                    if skip_image:
+                    if skip_image or repeat_previous:
                         break
                     if go_back:
                         continue # Restart the loop with the decremented q_idx
@@ -580,6 +599,7 @@ def create_ground_truth_labels(
                         f.write(json.dumps(label) + "\n")
                     f.flush()
                     labeled_count += 1
+                    previous_image_labels = image_labels # Save this for the next image
                     print(f"\n✓ Saved {len(image_labels)} labels for {image_path.name}")
                 else:
                     skipped_count += 1
@@ -602,7 +622,7 @@ if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
     CONTINENT = "Europe"
-    CITY = "10"
+    CITY = "14"
     NUM_KEYFRAMES = 20  # Number of images to label
     OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
     SELECT_IMAGES = False
