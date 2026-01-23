@@ -213,6 +213,20 @@ def load_existing_labels_by_image_and_question(output_path):
 
     return labels
 
+def get_all_child_questions(prompt_manager, question_id):
+    """Recursively finds all follow-up question IDs for a given question."""
+    children = set()
+    # Check for level 2
+    f2 = prompt_manager.get_followup_prompts(question_id, "yes")
+    if f2:
+        for q in f2:
+            children.add(q['id'])
+            # Check for level 3
+            f3 = prompt_manager.get_followup_prompts(q['id'], "yes")
+            if f3:
+                for qq in f3:
+                    children.add(qq['id'])
+    return children
 
 def create_ground_truth_labels(
     input_dir, 
@@ -264,12 +278,40 @@ def create_ground_truth_labels(
     # ------------------------------------------------------------------
     # Prepare output file
     # ------------------------------------------------------------------
-    if override_existing:
-        print("⚠ Override mode enabled: existing labels will be replaced")
-        response = input("Continue? (y/n): ").strip().lower()
-        if response not in {"y", "yes"}:
-            print("Aborted.")
-            return 1
+    all_existing_data = []
+    if os.path.exists(output_path):
+        with open(output_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    all_existing_data.append(json.loads(line))
+
+    # If patching, we need to identify what to remove from the current file 
+    # so we don't have duplicates after appending.
+    if patch_questions is not None and os.path.exists(output_path):
+        print(f"Refining Ground Truth: Removing old entries for {patch_questions} and their follow-ups...")
+        
+        # Initialize PromptManager early to find children
+        prompt_json_path = "../inout/vqa_prompts.json"
+        temp_pm = PromptManager(str(prompt_json_path), preset=prompt_preset)
+        
+        ids_to_remove = set(patch_questions)
+        for pqid in patch_questions:
+            ids_to_remove.update(get_all_child_questions(temp_pm, pqid))
+        
+        # Filter: Keep everything EXCEPT the questions we are currently patching
+        filtered_data = [
+            item for item in all_existing_data 
+            if item.get("question_id") not in ids_to_remove
+        ]
+        
+        # Rewrite the file with the remaining "untouched" questions
+        with open(output_path, "w", encoding="utf-8") as f:
+            for item in filtered_data:
+                f.write(json.dumps(item) + "\n")
+        
+        # Ensure we append new answers now
+        write_mode = "a"
+    elif override_existing:
         write_mode = "w"
     else:
         write_mode = "a"
@@ -344,10 +386,12 @@ def create_ground_truth_labels(
     try:
         with open(output_path, write_mode, encoding="utf-8") as f:
             for idx, image_path in enumerate(selected_images):
+                
                 original_index = image_files.index(image_path.parent.parent / "images" / image_path.name)
 
                 # Get the image already answered questions
-                answered = existing_labels.get(image_path.name, set())
+                current_labels = load_existing_labels_by_image_and_question(output_path)
+                answered = current_labels.get(image_path.name, set())
                 
                 # Load image
                 try:
@@ -359,6 +403,21 @@ def create_ground_truth_labels(
                 # Reset for new image
                 prompt_manager.reset_answer_history()
                 initial_prompts = prompt_manager.get_initial_prompts()
+
+                # Determine which questions to ask
+                if patch_questions is not None:
+                    # Ask only the questions in patch_questions
+                    # (Follow-ups are handled naturally inside the loop if answer is 'yes')
+                    initial_prompts = [
+                        q for q in initial_prompts if q["id"] in patch_questions
+                    ]
+                elif not override_existing:
+                    initial_prompts = [
+                        q for q in initial_prompts if q["id"] not in answered
+                    ]
+
+                if not initial_prompts:
+                    continue
 
                 image_labels = []
                 skip_image = False
@@ -621,19 +680,20 @@ def create_ground_truth_labels(
 if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
-    CONTINENT = "Europe"
-    CITY = "22"
+    CONTINENT = "America"
+    CITY = "SanFrancisco"
     NUM_KEYFRAMES = 20  # Number of images to label
     OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
     SELECT_IMAGES = False
-    PATCH_QUESTIONS = None
+    PATCH_QUESTIONS = ("q_obstacle_blocking",)
 
     """
-    override_existing	patch_questions	    Behavior
+     override_existing	patch_questions	    Behavior
         False	               None	        Normal incremental labeling
-        False	               set(...)	    Patch only missing questions
+        False	               set(...)	    Erases those questions and asks them again
         True	               None	        Full re-label all questions
-        True	               set(...)	    Redo only those questions for all images"""
+        True	               set(...)	    Delete all GT and ask the patched"""
+
 
     # =======================================
     
