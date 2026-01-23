@@ -336,57 +336,44 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
 
 if __name__ == "__main__":
 
-    """# From SVO
     # ============ CONFIGURATION ============
-    MODEL = "instructblip"  # Options: vilt, blip2, blip2-large, llava, instructblip
-    PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
-    FRAME_STRIDE = 100  # Process every N-th frame
-    # =======================================
-    
-    print(f"="*70)
-    print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
-    print(f"="*70)
-    print(f"Model: {MODEL}")
-    print(f"Preset: {PROMPT_PRESET}")
-    print(f"Sequence: {SEQUENCE}")
-    print(f"="*70)
-    
-    SEQUENCE = 15 
-    input_svo_path = f"../data/svo/IRI_{SEQUENCE:02d}.svo2"
-    output_directory = f"../data/vqa_outputs/IRI_{SEQUENCE:02d}/{MODEL}_{PROMPT_PRESET}/"
-    exit_code = fromSVO(input_svo_path, output_directory, MODEL, PROMPT_PRESET, FRAME_STRIDE)
-    sys.exit(exit_code)"""
-
-    # From Images 
-    # ============ CONFIGURATION ============
-    #models = ["llava", "instructblip", "qwen-vl", "vilt"]
-    """continent_city = {
-                    #"America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
+    models = ["llava", "instructblip", "qwen-vl", "vilt"]
+    continent_city = {
+                    "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
                     "Europe": [
-                        #"London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
-                        "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"]
-                    #"Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    #"Africa": [#"Kampala", "Lusaka", "Marrakesh"]
-                      }"""
-    models = ["qwen-vl"]
-    continent_city = {"America": ["SanFrancisco"]}
-    for continent, cities in continent_city.items():
-        for city in cities:
-            for model in models:
-                MODEL = model  # Options: vilt, blip2, blip2-large, llava, instructblip
-                PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
-                CONTINENT = continent
-                CITY = city  # Use the current city in the list
-                # =======================================
-                
-                print(f"="*70)
-                print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
-                print(f"="*70)
-                print(f"Model: {MODEL}")
-                print(f"Preset: {PROMPT_PRESET}")
-                print(f"City: {CITY}, {CONTINENT}")
-                print(f"="*70)
+                        "London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
+                        "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
+                    "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
+                    "Africa": ["Kampala", "Lusaka", "Marrakesh"]
+                     }
+    
+    errors = []
+    try:
+        for continent, cities in continent_city.items():
+            for city in cities:
+                for model in models:
+                    MODEL = model  # Options: vilt, blip2, blip2-large, llava, instructblip
+                    PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
+                    CONTINENT = continent
+                    CITY = city  # Use the current city in the list
+                    # =======================================
+                    
+                    print(f"="*70)
+                    print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
+                    print(f"="*70)
+                    print(f"Model: {MODEL}")
+                    print(f"Preset: {PROMPT_PRESET}")
+                    print(f"City: {CITY}, {CONTINENT}")
+                    print(f"="*70)
 
-                image_dir = f"../data/{CONTINENT}/{CITY}"
-                
-                fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True, evaluate=True)
+                    image_dir = f"../data/{CONTINENT}/{CITY}"
+                    
+                    fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True, evaluate=True)
+
+    except Exception as e:
+        track = f"ERROR: --- {MODEL} | {CITY}: {e}"
+        errors.append(track)
+
+    print("Done!\nThis are the errors we got:")
+    for error in errors:
+        print(error, sep="\n")
