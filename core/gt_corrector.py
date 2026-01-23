@@ -60,7 +60,7 @@ HTML_TEMPLATE = """
     <div id="sidebar">
         <h3>Suspicious ({{ review_indices|length }})</h3>
         {% for idx in review_indices %}
-        <img src="/img/{{ data[idx].image_name }}" class="thumb error" onclick="loadByReviewPos({{ loop.index0 }})" id="thumb-{{ idx }}">
+        <img src="/img/{{data[idx].image_name }}" class="thumb error" onclick="loadByReviewPos({{ loop.index0 }})" id="thumb-{{ idx }}">
         {% endfor %}
     </div>
     <div id="main">
@@ -94,9 +94,28 @@ HTML_TEMPLATE = """
         function loadFrame(idx) {
             const item = gtData[idx];
             
+            // Determine which question text to use
+            let fullPrompt = item.question || ""; // Ensure it's at least an empty string
+            for (const m of {{ MODELS|tojson }}) {
+                const modelMatch = modelAnswers[m].find(a => 
+                    a.image_name === item.image_name && a.question_id === item.question_id
+                );
+                if (modelMatch && modelMatch.question) {
+                    fullPrompt = modelMatch.question;
+                    break;
+                }
+            }
+
+            // Clean the prompt safely
+            let displayQuestion = fullPrompt;
+            if (typeof fullPrompt === 'string' && fullPrompt.includes("Yes or No.")) {
+                const parts = fullPrompt.split("Yes or No.");
+                displayQuestion = parts[parts.length - 1].trim();
+            }
+
             // Update Text & Image
             document.getElementById('large').src = "/img/" + item.image_name;
-            document.getElementById('q-text').innerText = item.question;
+            document.getElementById('q-text').innerText = displayQuestion;
             document.getElementById('current-gt').innerText = item.answer.toUpperCase();
             document.getElementById('controls').style.display = 'block';
             
@@ -160,7 +179,12 @@ HTML_TEMPLATE = """
         });
 
         window.onload = () => {
-            if (reviewIndices.length > 0) loadByReviewPos(0);
+            console.log("Review Indices:", reviewIndices); // Debug check
+            if (typeof reviewIndices !== 'undefined' && reviewIndices.length > 0) {
+                loadByReviewPos(0);
+            } else {
+                document.getElementById('q-text').innerText = "No suspicious items found.";
+            }
         };
     </script>
 </body>
@@ -199,7 +223,13 @@ def index():
         if disagreement_count >= 3:
             review_indices.append(i)
             
-    return render_template_string(HTML_TEMPLATE, data=gt_data, model_answers=MODEL_ANSWERS, review_indices=review_indices)
+    return render_template_string(
+        HTML_TEMPLATE, 
+        data=gt_data, 
+        model_answers=MODEL_ANSWERS, 
+        review_indices=review_indices,
+        MODELS=MODELS 
+    )
 
 @app.route('/img/<filename>')
 def get_img(filename):

@@ -1,4 +1,5 @@
 from pathlib import Path
+import string
 import cv2
 import json
 from PIL import Image
@@ -87,358 +88,229 @@ def create_display_frame(image, frame_number, answers_dict, model_name):
     
     return img_display
 
-def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image_dir, prompt_json_path="../inout/vqa_prompts.json", show=True):
+import os
+import json
+import base64
+import pandas as pd
+import folium
+from folium import plugins
+from PIL import Image
+from io import BytesIO
+from pathlib import Path
+import webbrowser
+import osmnx as ox
+
+def get_normalized_risk(img_questions, primary_ids):
     """
-    Generate an interactive map with GPS positions and VQA results.
-    Markers are colored based on which topic categories have positive answers.
-    Level-1 primary questions are excluded from color coding.
-    
-    Args:
-        gps_csv_path: Path to GPS positions CSV file
-        answers_jsonl_path: Path to VQA answers JSONL file
-        output_html_path: Path to save the HTML map
-        image_dir: Directory containing the images
-        prompt_json_path: Path to the prompts JSON file (optional)
+    Calculates a normalized risk score [0, 1] using a weighted penalty/reward system.
     """
-    print("\n" + "="*70)
-    print("GENERATING INTERACTIVE MAP")
-    print("="*70)
+    # 1. Configuration: Centralize tiers and penalty ratios
+    HAZARD_CONFIG = {
+        "CRITICAL": {"weight": 1, "ids": ["q_construction_visible", "q_surface_hazardous", "q_pedestrian_not_on_sidewalk"]},
+        "HIGH":     {"weight": 0.6, "ids": ["q_crossing_nearby", "q_stairs_visible", "q_obstacle_blocking"]},
+        "LOW":      {"weight": 0.3, "ids": ["q_pedestrians_present", "q_vehicle_nearby"]}
+    }
     
-    # Load GPS data
-    gps_df = pd.read_csv(gps_csv_path)
-    print(f"Loaded {len(gps_df)} GPS positions")
+    # Ratio for 'No' answers (Reward for safety)
+    SAFETY_REWARD_RATIO = 1/6
     
-    # Load VQA answers
-    answers_data = []
-    with open(answers_jsonl_path, 'r') as f:
-        for line in f:
-            answers_data.append(json.loads(line))
-    print(f"Loaded {len(answers_data)} VQA results")
+    # 2. Map IDs to weights for O(1) lookup
+    weight_lookup = {qid: cfg["weight"] for cfg in HAZARD_CONFIG.values() for qid in cfg["ids"]}
     
-    # Load prompt configurations and create category mapping
-    question_full_text = {}
-    question_to_category = {}  # Map question_id to category name
-    category_colors = {}  # Map category name to color
+    # 3. Calculate Max Possible Score (Denominator)
+    # We only consider weights for IDs that are actually in our primary_ids list
+    active_weights = [weight_lookup.get(qid, 0) for qid in primary_ids]
+    max_theoretical = sum(active_weights)
     
-    # Categories to exclude from color coding (these are meta-categories, not topics)
-    excluded_categories = {'level_1_primary', 'level_1', 'primary', 'general'}
-    
-    # Define colors for different categories
-    available_colors = [
-        'red', 'blue', 'green', 'purple', 'orange', 
-        'darkred', 'lightred', 'beige', 'darkblue', 'darkgreen',
-        'cadetblue', 'darkpurple', 'pink', 'lightblue', 'lightgreen',
-        'gray', 'black', 'lightgray'
-    ]
-    
-    if prompt_json_path and os.path.exists(prompt_json_path):
-        try:
-            with open(prompt_json_path, 'r') as f:
-                prompt_config = json.load(f)
+    if max_theoretical <= 0:
+        return 0.0
+
+    # 4. Compute Net Score
+    net_score = 0.0
+    for q_id in primary_ids:
+        # Skip if the question wasn't even asked/answered
+        if q_id not in img_questions:
+            continue
             
-            # Build mapping of question_id to full question text and category
-            color_idx = 0
-            for category_name, category_data in prompt_config['prompt_categories'].items():
-                # Skip excluded categories for color assignment
-                if category_name.lower() not in excluded_categories:
-                    category_colors[category_name] = available_colors[color_idx % len(available_colors)]
-                    color_idx += 1
-                
-                for question in category_data['questions']:
-                    question_id = question['id']
-                    question_full_text[question_id] = {
-                        'short_label': question.get('short_label', question_id),
-                        'text': question['text']
-                    }
-                    question_to_category[question_id] = category_name
-                    
-            print(f"Loaded {len(question_full_text)} question definitions")
-            print(f"Topic categories and colors: {category_colors}")
-        except Exception as e:
-            print(f"Could not load prompt JSON: {e}")
+        ans = img_questions[q_id].get('answer', '').lower().strip().translate(str.maketrans('', '', string.punctuation))
+        weight = weight_lookup.get(q_id, 0)
+        
+        # Binary classification of the answer
+        is_yes = any(pos in ans for pos in ['yes', 'true', 'hazard'])
+        is_no = any(neg in ans for neg in ['no', 'false', 'safe'])
+        
+        if is_yes:
+            net_score += weight
+        elif is_no:
+            net_score -= (weight * SAFETY_REWARD_RATIO)
+
+    # 5. Normalization with Clipping
+    # result = (score - min_possible) / (max_possible - min_possible)
+    # But since we want 0 to be the "Safe" floor:
+    normalized = max(0, net_score) / max_theoretical
+    return min(normalized, 1.0)
+
+def get_color_from_normalized(score):
+    if score <= 0.15: return '#2ecc71'     # Green (Very Safe)
+    if score < 0.4: return '#f1c40f'      # Yellow
+    if score < 0.7: return '#e67e22'      # Orange
+    return '#e74c3c'                     # Red
+
+def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image_dir, prompt_json_path="../inout/vqa_prompts.json", show=True):
+    # 1. Load Config
+    primary_ids = []
+    question_full_text, question_to_category, category_names = {}, {}, {}
+    if os.path.exists(prompt_json_path):
+        with open(prompt_json_path, 'r') as f:
+            prompt_config = json.load(f)
+            primary_ids = prompt_config.get('prompt_presets', {}).get('level_1_only', {}).get('enabled_questions', [])
+            for cat_id, cat_data in prompt_config['prompt_categories'].items():
+                category_names[cat_id] = cat_data.get('name', cat_id)
+                for q in cat_data['questions']:
+                    question_full_text[q['id']] = q['text']
+                    question_to_category[q['id']] = cat_id
+
+    # 2. Load Data
+    gps_df_raw = pd.read_csv(gps_csv_path).sort_values(by='filename')
+    with open(answers_jsonl_path, 'r') as f:
+        answers_data = [json.loads(line) for line in f]
     
-    # Group answers by image and question (to avoid duplicates)
+    # Organize answers by image
     answers_by_image = {}
     for ans in answers_data:
         img_name = ans['image_name']
-        question_id = ans['question_id']
-        
         if img_name not in answers_by_image:
             answers_by_image[img_name] = {}
-        
-        # Only keep the first occurrence of each question for this image
-        if question_id not in answers_by_image[img_name]:
-            answers_by_image[img_name][question_id] = ans
-    
-    # Create map centered on the data
-    center_lat = gps_df['latitude'].mean()
-    center_lon = gps_df['longitude'].mean()
-    m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=16,
-        tiles='OpenStreetMap'
-    )
-    
-    # Add alternative tile layers
-    folium.TileLayer('CartoDB positron', name='CartoDB Positron').add_to(m)
+        answers_by_image[img_name][ans['question_id']] = ans
 
-    # Create path line
-    path_coordinates = []
-    for _, row in gps_df.iterrows():
-        path_coordinates.append([row['latitude'], row['longitude']])
+    # CRITICAL STEP: Filter GPS data to ONLY include images that have answers
+    answered_filenames = set(answers_by_image.keys())
+    gps_df_filtered = gps_df_raw[gps_df_raw['filename'].isin(answered_filenames)].copy()
+
+   # 3. OSM Extraction
+    center_lat, center_lon = gps_df_raw['latitude'].mean(), gps_df_raw['longitude'].mean()
+    G = ox.graph_from_point((center_lat, center_lon), dist=1000, network_type='drive')
     
-    # Add path polyline
-    folium.PolyLine(
-        path_coordinates,
-        color='blue',
-        weight=3,
-        opacity=0.7,
-        popup='Path'
-    ).add_to(m)
+    # Map ONLY filtered images to their single nearest edge
+    # This prevents the "Green Ghost" effect from unanalyzed GPS points
+    nearest_edges = ox.distance.nearest_edges(G, gps_df_filtered['longitude'], gps_df_filtered['latitude'])
+    gps_df_filtered['edge_id'] = [str(edge) for edge in nearest_edges]
     
-    # Add markers for processed images
+    # Aggregate Max Risk per walked segment
+    edge_risks = {}
+    for _, row in gps_df_filtered.iterrows():
+        eid = row['edge_id']
+        norm_score = get_normalized_risk(answers_by_image.get(row['filename'], {}), primary_ids)
+        # Take the maximum risk if multiple images map to the same segment
+        if eid not in edge_risks or norm_score > edge_risks[eid]:
+            edge_risks[eid] = norm_score
+
+    # 4. Initialize Map
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=18, tiles='CartoDB positron')
+
+   # 5. Draw Road segments with Grey fallback
+    for u, v, k, edge_data in G.edges(keys=True, data=True):
+        eid_str = str((u, v, k))
+        
+        # Coordinates logic
+        if 'geometry' in edge_data:
+            coords = [[lat, lon] for lon, lat in edge_data['geometry'].coords]
+        else:
+            coords = [[G.nodes[u]['y'], G.nodes[u]['x']], [G.nodes[v]['y'], G.nodes[v]['x']]]
+        
+        # Check if this segment exists in our risk-mapped dictionary
+        if eid_str in edge_risks:
+            line_color = get_color_from_normalized(edge_risks[eid_str])
+            line_weight = 14
+            line_opacity = 0.7
+            tooltip_txt = f"Analyzed Risk: {edge_risks[eid_str]:.2f}"
+        else:
+            # Segment was not matched to any answered image
+            line_color = "#bdc3c7"  # Grey
+            line_weight = 4         # Thinner for background streets
+            line_opacity = 0.3
+            tooltip_txt = "No Image Data"
+
+        folium.PolyLine(
+            coords, 
+            color=line_color, 
+            weight=line_weight, 
+            opacity=line_opacity,
+            tooltip=tooltip_txt
+        ).add_to(m)
+
+    # 6. Draw Path (Thin blue sequence)
+    folium.PolyLine(gps_df_raw[['latitude', 'longitude']].values.tolist(), color='#3498db', weight=2, opacity=0.8, dash_array='5, 5').add_to(m)
+
+    # 7. Add Markers with Full Context
     for img_name, img_questions in answers_by_image.items():
-        # Find GPS position for this image
-        gps_row = gps_df[gps_df['filename'] == img_name]
+        gps_row = gps_df_filtered[gps_df_filtered['filename'] == img_name]
+        if gps_row.empty: continue
+        lat, lon = gps_row.iloc[0]['latitude'], gps_row.iloc[0]['longitude']
         
-        if gps_row.empty:
-            continue
-        
-        lat = gps_row.iloc[0]['latitude']
-        lon = gps_row.iloc[0]['longitude']
-        
-        # Load thumbnail image
-        img_path = Path(image_dir) / img_name
-        thumbnail_size = (300, 200)
-        
+        # Base64 Image
+        img_html = ""
         try:
-            img = Image.open(img_path)
-            img.thumbnail(thumbnail_size, Image.Resampling.LANCZOS)
-            
-            # Convert image to base64
-            buffered = BytesIO()
-            img.save(buffered, format="JPEG")
-            img_str = base64.b64encode(buffered.getvalue()).decode()
-            img_html = f'<img src="data:image/jpeg;base64,{img_str}" style="max-width:300px;"><br>'
-        except Exception as e:
-            print(f"Error loading thumbnail for {img_name}: {e}")
-            img_html = f'<b>{img_name}</b><br>'
-        
-        # Analyze answers by category to determine marker color
-        # Only consider topic categories (exclude level_1_primary and similar)
-        positive_topic_categories = set()  # Topic categories with positive answers
-        category_answers = {}  # Track all answers by category (including excluded ones)
-        
-        for question_id, ans in img_questions.items():
-            answer = ans['answer'].lower()
-            category = question_to_category.get(question_id, 'unknown')
-            
-            if category not in category_answers:
-                category_answers[category] = []
-            category_answers[category].append(answer)
-            
-            # Check if answer is positive AND category is a topic (not excluded)
-            if category.lower() not in excluded_categories:
-                if 'yes' in answer or 'safe' in answer or 'clear' in answer:
-                    positive_topic_categories.add(category)
-        
-        # Create popup HTML with category grouping
-        popup_html = f"""
-        <div style="width:400px; max-height:600px; overflow-y:auto;">
-            {img_html}
-            <h4 style="margin:5px 0;">{img_name}</h4>
-        """
-        
-        # First show level_1_primary if it exists (as a special section)
-        for category_name in sorted(category_answers.keys()):
-            if category_name.lower() in excluded_categories:
-                popup_html += f"""
-                <div style="margin:10px 0; padding:5px; border-left:4px solid #888; background-color:#f0f0f0;">
-                    <h5 style="margin:2px 0; color:#555;">Primary Assessment</h5>
-                    <table style="width:100%; font-size:11px; border-collapse: collapse;">
-                """
-                
-                # Add questions from this category
-                for question_id in sorted(img_questions.keys()):
-                    if question_to_category.get(question_id, 'unknown') == category_name:
-                        ans = img_questions[question_id]
-                        answer = ans['answer']
-                        confidence = ans.get('confidence')
-                        
-                        if question_id in question_full_text:
-                            full_question = question_full_text[question_id]['text']
-                        else:
-                            full_question = ans.get('question', '')
-                        
-                        # Color code based on answer
-                        if 'yes' in answer.lower() or 'safe' in answer.lower():
-                            color = 'green'
-                        elif 'no' in answer.lower() or 'wait' in answer.lower() or 'stop' in answer.lower():
-                            color = 'red'
-                        else:
-                            color = 'black'
-                        
-                        conf_str = f" ({confidence:.2f})" if confidence is not None else ""
-                        
-                        popup_html += f"""
-                            <tr style="border-bottom: 1px solid #ddd;">
-                                <td style="padding:4px 2px;">
-                                    <span style="font-size:10px; color:#666;">{full_question}</span>
-                                </td>
-                                <td style="padding:4px 2px; color:{color}; white-space:nowrap;"><b>{answer}</b>{conf_str}</td>
-                            </tr>
-                        """
-                
-                popup_html += """
-                    </table>
-                </div>
-                """
-        
-        # Then show topic categories (the ones used for coloring)
-        for category_name in sorted(category_answers.keys()):
-            if category_name.lower() not in excluded_categories:
-                category_color = category_colors.get(category_name, 'gray')
-                is_positive = category_name in positive_topic_categories
-                
-                popup_html += f"""
-                <div style="margin:10px 0; padding:5px; border-left:4px solid {category_color}; background-color:#f9f9f9;">
-                    <h5 style="margin:2px 0; color:{category_color};">{category_name.replace('_', ' ').title()} {'✓' if is_positive else ''}</h5>
-                    <table style="width:100%; font-size:11px; border-collapse: collapse;">
-                """
-                
-                # Add questions from this category
-                for question_id in sorted(img_questions.keys()):
-                    if question_to_category.get(question_id, 'unknown') == category_name:
-                        ans = img_questions[question_id]
-                        answer = ans['answer']
-                        confidence = ans.get('confidence')
-                        
-                        if question_id in question_full_text:
-                            full_question = question_full_text[question_id]['text']
-                        else:
-                            full_question = ans.get('question', '')
-                        
-                        # Color code based on answer
-                        if 'yes' in answer.lower() or 'safe' in answer.lower():
-                            color = 'green'
-                        elif 'no' in answer.lower() or 'wait' in answer.lower() or 'stop' in answer.lower():
-                            color = 'red'
-                        else:
-                            color = 'black'
-                        
-                        conf_str = f" ({confidence:.2f})" if confidence is not None else ""
-                        
-                        popup_html += f"""
-                            <tr style="border-bottom: 1px solid #ddd;">
-                                <td style="padding:4px 2px;">
-                                    <span style="font-size:10px; color:#666;">{full_question}</span>
-                                </td>
-                                <td style="padding:4px 2px; color:{color}; white-space:nowrap;"><b>{answer}</b>{conf_str}</td>
-                            </tr>
-                        """
-                
-                popup_html += """
-                    </table>
-                </div>
-                """
-        
-        popup_html += "</div>"
-        
-        # Determine marker color based on ONLY topic categories (not level_1_primary)
-        if len(positive_topic_categories) == 0:
-            # No positive topic answers - use gray
-            marker_color = 'gray'
-            marker_icon = 'camera'
-        elif len(positive_topic_categories) == 1:
-            # Single positive category - use that category's color
-            marker_color = category_colors.get(list(positive_topic_categories)[0], 'green')
-            marker_icon = 'exclamation-circle'
-        else:
-            # Multiple positive categories - create a multi-colored marker effect
-            # Use the first category's color but with a special icon
-            sorted_categories = sorted(positive_topic_categories)
-            marker_color = category_colors.get(sorted_categories[0], 'green')
-            marker_icon = 'exclamation-triangle'
-        
-        # Create tooltip showing positive topic categories only
-        if positive_topic_categories:
-            tooltip_text = f"{img_name}\n✓ " + ", ".join(sorted(positive_topic_categories))
-        else:
-            tooltip_text = f"{img_name}\n○ No topic detections"
-        
-        # Add marker
-        folium.Marker(
-            location=[lat, lon],
-            popup=folium.Popup(popup_html, max_width=450),
-            tooltip=tooltip_text,
-            icon=folium.Icon(color=marker_color, icon=marker_icon, prefix='fa')
+            with Image.open(Path(image_dir) / img_name) as img:
+                img.thumbnail((300, 200))
+                buf = BytesIO(); img.save(buf, format="JPEG")
+                img_str = base64.b64encode(buf.getvalue()).decode()
+                img_html = f'<img src="data:image/jpeg;base64,{img_str}" style="width:100%; border-radius:5px; margin-bottom:5px;">'
+        except: pass
+
+        # Categorized popup logic
+        cat_tables = {}
+        for q_id, ans in img_questions.items():
+            cid = question_to_category.get(q_id, 'Other')
+            if cid not in cat_tables: cat_tables[cid] = []
+            val = ans.get('answer', 'N/A')
+            color = 'red' if 'yes' in val.lower() else 'green' if 'no' in val.lower() else 'black'
+            cat_tables[cid].append(f'<tr><td style="font-size:10px;">{question_full_text.get(q_id, q_id)}</td><td style="color:{color}; font-weight:bold;">{val}</td></tr>')
+
+        popup_html = f'<div style="width:350px; max-height:350px; overflow-y:auto; font-family:sans-serif;">{img_html}'
+        for cid in sorted(cat_tables.keys(), key=lambda x: 'level_1' not in x):
+            popup_html += f'<div style="margin-top:8px; border-top:1px solid #ddd;"><b>{category_names.get(cid, cid)}</b><table style="width:100%;">{"".join(cat_tables[cid])}</table></div>'
+        popup_html += '</div>'
+
+        norm_score = get_normalized_risk(img_questions, primary_ids)
+        folium.CircleMarker(
+            [lat, lon], radius=6, 
+            color='white', weight=1,
+            fill=True, fill_color=get_color_from_normalized(norm_score), fill_opacity=1,
+            popup=folium.Popup(popup_html, max_width=350)
         ).add_to(m)
+
+    # 8. Updated Legend for Streets and Path
+    legend_html = f'''
+    <div style="position: fixed; bottom: 30px; left: 30px; width: 180px; 
+    background-color: white; border:2px solid grey; z-index:9999; font-size:12px;
+    padding: 12px; border-radius: 8px; font-family: Arial; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
+    <b style="font-size:13px;">Map Legend</b><hr style="margin:5px 0;">
+    <b>Street Risk</b><br>
+    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.0)}; font-size:20px;"></i> [0.0] Safe<br>
+    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.3)}; font-size:20px;"></i> [0.3] Caution<br>
+    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.6)}; font-size:20px;"></i> [0.0] Danger<br>
+    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.9)}; font-size:20px;"></i> [0.0] Very Danger<br>
+    <i class="fa fa-minus" style="color:#bdc3c7; font-size:20px;"></i> No Image Data<br>
+    <br>
+    <b>Travel Path</b><br>
+    <i class="fa fa-minus" style="color:#3498db; font-size:15px; border-bottom: 2px dashed #3498db;"></i> GPS Sequence
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(legend_html))
     
-    # Add start and end markers
-    if not gps_df.empty:
-        # Start marker
-        folium.Marker(
-            location=[gps_df.iloc[0]['latitude'], gps_df.iloc[0]['longitude']],
-            popup='Start',
-            icon=folium.Icon(color='blue', icon='play', prefix='fa')
-        ).add_to(m)
-        
-        # End marker
-        folium.Marker(
-            location=[gps_df.iloc[-1]['latitude'], gps_df.iloc[-1]['longitude']],
-            popup='End',
-            icon=folium.Icon(color='purple', icon='stop', prefix='fa')
-        ).add_to(m)
-    
-    # Add legend for topic categories only (exclude level_1_primary)
-    if category_colors:
-        legend_html = '''
-        <div style="position: fixed; 
-                    top: 10px; right: 10px; width: 220px; 
-                    background-color: white; z-index:9999; font-size:12px;
-                    border:2px solid grey; border-radius: 5px; padding: 10px;
-                    box-shadow: 0 0 15px rgba(0,0,0,0.2);">
-            <h4 style="margin:0 0 10px 0; border-bottom:1px solid #ddd; padding-bottom:5px;">Topic Categories</h4>
-        '''
-        for category, color in sorted(category_colors.items()):
-            # Format category name nicely
-            display_name = category.replace('_', ' ').title()
-            legend_html += f'''
-            <div style="margin: 5px 0; display: flex; align-items: center;">
-                <i class="fa fa-map-marker" style="color:{color}; font-size:18px; width:25px;"></i>
-                <span style="margin-left:5px; font-size:11px;">{display_name}</span>
-            </div>
-            '''
-        legend_html += '''
-            <hr style="margin:10px 0; border:none; border-top:1px solid #ddd;">
-            <div style="margin: 5px 0; display: flex; align-items: center;">
-                <i class="fa fa-map-marker" style="color:gray; font-size:18px; width:25px;"></i>
-                <span style="margin-left:5px; font-size:11px;">No Detections</span>
-            </div>
-        </div>
-        '''
-        m.get_root().html.add_child(folium.Element(legend_html))
-    
-    # Add layer control
-    folium.LayerControl().add_to(m)
-    
-    # Add minimap
-    plugins.MiniMap().add_to(m)
-    
-    # Add fullscreen option
-    plugins.Fullscreen().add_to(m)
-    
-    # Save map
     m.save(output_html_path)
-    print(f"\nInteractive map saved to: {output_html_path}")
-    print("="*70)
+    if show: webbrowser.open('file://' + os.path.abspath(output_html_path))
+
+
+if __name__ == "__main__":
     
-    # Open map in browser
-    if show:
-        try:
-            print(f"Opening map in browser...")
-            webbrowser.open('file://' + os.path.abspath(output_html_path))
-            print("Map opened successfully!")
-        except Exception as e:
-            print(f"Could not open browser automatically: {e}")
-            print(f"Please open manually: {output_html_path}")
+    CONTINENT = "America"
+    CITY = "NewYork"
+    MODEL = "qwen-vl"
+
+    gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"
+    answers_path =  os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/answers.jsonl")
+    map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interative_map.html")
+    image_dir = os.path.join(Path(gps_csv_path).parent, "images_selected")
+    generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True)

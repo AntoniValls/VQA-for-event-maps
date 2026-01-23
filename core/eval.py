@@ -63,24 +63,36 @@ class MetricsEvaluator:
     def match_predictions_to_ground_truth(self) -> Dict:
         """
         Match predictions to ground truth based on image and question ID.
+        If a ground truth pair appears multiple times, the last one is taken as true (this could happen because of a bug!)
         
         Returns:
             Dictionary with matched pairs and statistics
         """
         # Create lookup dictionary for ground truth
         gt_lookup = {}
+        duplicates_count = 0
+
         for gt in self.ground_truth:
-            # Use image_name (or image_path) and question_id as key
             key = (gt.get('image_name'), gt.get('question_id'))
+            if key in gt_lookup:
+                duplicates_count += 1
             gt_lookup[key] = gt
+            
+        if duplicates_count > 0:
+            print(f"Found {duplicates_count} duplicate GT entries. Using the most recent (last) entries.")
         
         # Match predictions to ground truth
         matched_pairs = []
         unmatched_predictions = []
         
+        # Similarly for predictions: if a model answered twice, we take the last answer
+        pred_lookup = {}
         for pred in self.predictions:
             key = (pred.get('image_name'), pred.get('question_id'))
-            
+            pred_lookup[key] = pred
+
+        # Now iterate through the de-duplicated predictions to match with GT
+        for key, pred in pred_lookup.items():
             if key in gt_lookup:
                 matched_pairs.append({
                     'prediction': pred,
@@ -342,6 +354,37 @@ def evaluate_model_performance(predictions_path: str, ground_truth_path: str):
     results = evaluator.evaluate(save_detailed_results=True)
     
     if results:
+        # Calculate counts for the report
+        pred_answers = [evaluator.normalize_yes_no(p.get('answer')) for p in evaluator.predictions]
+        gt_answers = [evaluator.normalize_yes_no(g.get('answer')) for g in evaluator.ground_truth]
+
+        def get_stats(answers):
+            total = len(answers)
+            yes_c = answers.count('yes')
+            no_c = answers.count('no')
+            others = total - (yes_c + no_c)
+            return yes_c, no_c, others, total
+
+        p_yes, p_no, p_others, p_total = get_stats(pred_answers)
+        g_yes, g_no, g_others, g_total = get_stats(gt_answers)
+
+        # Write simple text report
+        report_path = os.path.join(Path(predictions_path).parent, "answer_characteristics.txt")
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(f"ANSWER CHARACTERISTICS REPORT\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"{'='*30}\n\n")
+            f.write(f"PREDICTIONS (Total: {p_total})\n")
+            f.write(f"- Yes: {p_yes} ({ (p_yes/p_total*100) if p_total > 0 else 0:.1f}%)\n")
+            f.write(f"- No:  {p_no} ({ (p_no/p_total*100) if p_total > 0 else 0:.1f}%)\n")
+            f.write(f"- Other/Invalid: {p_others}\n\n")
+            f.write(f"GROUND TRUTH (Total: {g_total})\n")
+            f.write(f"- Yes: {g_yes} ({ (g_yes/g_total*100) if g_total > 0 else 0:.1f}%)\n")
+            f.write(f"- No:  {g_no} ({ (g_no/g_total*100) if g_total > 0 else 0:.1f}%)\n")
+            f.write(f"- Other/Invalid: {g_others}\n")
+        
+        print(f"Characteristics report saved to: {report_path}")
+
         # Print summary
         evaluator.print_summary(results)
         

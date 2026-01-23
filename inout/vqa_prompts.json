@@ -13,7 +13,7 @@
       "questions": [
           {
           "id": "q_pedestrian_not_on_sidewalk",
-          "text": "Is the pedestrian currently outside a designated sidewalk or pedestrian path?",
+          "text": "Is the pedestrian currently outside a sidewalk or pedestrian path/crossing?",
           "topic": "Pedestrian - Location",
           "type": "boolean",
           "choices": ["Yes", "No"],
