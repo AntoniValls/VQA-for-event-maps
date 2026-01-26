@@ -519,6 +519,7 @@
       "name": "Level 1 Questions Only",
       "description": "Only primary scene assessment questions",
       "enabled_questions": [
+        "q_pedestrian_not_on_sidewalk",
         "q_crossing_nearby",
         "q_stairs_visible",
         "q_construction_visible",

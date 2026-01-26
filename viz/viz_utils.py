@@ -112,7 +112,7 @@ def get_normalized_risk(img_questions, primary_ids):
     }
     
     # Ratio for 'No' answers (Reward for safety)
-    SAFETY_REWARD_RATIO = 1/6
+    SAFETY_REWARD_RATIO = 1/8
     
     # 2. Map IDs to weights for O(1) lookup
     weight_lookup = {qid: cfg["weight"] for cfg in HAZARD_CONFIG.values() for qid in cfg["ids"]}
@@ -289,8 +289,8 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
     <b>Street Risk</b><br>
     <i class="fa fa-minus" style="color:{get_color_from_normalized(0.0)}; font-size:20px;"></i> [0.0] Safe<br>
     <i class="fa fa-minus" style="color:{get_color_from_normalized(0.3)}; font-size:20px;"></i> [0.3] Caution<br>
-    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.6)}; font-size:20px;"></i> [0.0] Danger<br>
-    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.9)}; font-size:20px;"></i> [0.0] Very Danger<br>
+    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.6)}; font-size:20px;"></i> [0.6] Danger<br>
+    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.9)}; font-size:20px;"></i> [0.9] Very Danger<br>
     <i class="fa fa-minus" style="color:#bdc3c7; font-size:20px;"></i> No Image Data<br>
     <br>
     <b>Travel Path</b><br>
@@ -305,8 +305,8 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
 
 if __name__ == "__main__":
     
-    CONTINENT = "America"
-    CITY = "NewYork"
+    CONTINENT = "Asia"
+    CITY = "Bombai"
     MODEL = "qwen-vl"
 
     gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"
