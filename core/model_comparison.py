@@ -140,7 +140,7 @@ fig.legend(
     bbox_to_anchor=(0.5, 1.05)
 )
 
-fig.suptitle("VQA Model Comparison (Mean Across Cities)", fontsize=14)
+fig.suptitle("VQA Model Comparison", fontsize=14)
 
 out_path = Path(OUTPUT_DIR) / "model_comparison_all_metrics.png"
 plt.tight_layout()

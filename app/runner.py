@@ -322,7 +322,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
     if generate_map and gps_csv_path and os.path.exists(gps_csv_path):
         map_output_path = os.path.join(answers_folder, "interactive_map.html")
         try:
-            generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True)
+            generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=False)
         except Exception as e:
             print(f"Error generating map: {e}")
     
@@ -339,13 +339,13 @@ if __name__ == "__main__":
     # ============ CONFIGURATION ============
     models = ["llava", "instructblip", "qwen-vl", "vilt"]
     continent_city = {
-                    "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
+                    #"America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
                     "Europe": [
-                        "London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
-                        "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
-                    "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    "Africa": ["Kampala", "Lusaka", "Marrakesh"]
-                     }
+                         "London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
+                         "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
+                    #"Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
+                    # "Africa": ["Kampala", "Lusaka", "Marrakesh"]
+                    }
     
     errors = []
     try:
