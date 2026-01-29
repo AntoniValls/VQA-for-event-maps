@@ -681,11 +681,11 @@ if __name__ == "__main__":
     # ============ CONFIGURATION ============
     PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
     CONTINENT = "America"
-    CITY = "SanFrancisco"
+    CITY = "LaHabana"
     NUM_KEYFRAMES = 20  # Number of images to label
     OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
     SELECT_IMAGES = False
-    PATCH_QUESTIONS = ("q_obstacle_blocking",)
+    PATCH_QUESTIONS = None
 
     """
      override_existing	patch_questions	    Behavior

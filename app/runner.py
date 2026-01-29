@@ -339,14 +339,14 @@ if __name__ == "__main__":
     # ============ CONFIGURATION ============
     models = ["llava", "instructblip", "qwen-vl", "vilt"]
     continent_city = {
-                    #"America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
-                    "Europe": [
-                         "London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
-                         "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
-                    #"Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    # "Africa": ["Kampala", "Lusaka", "Marrakesh"]
+                    # "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
+                    # "Europe": [
+                    #      "London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
+                    #      "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
+                    # "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
+                    "Africa": ["Kampala", "Lusaka", "Marrakesh"]
                     }
-    
+   
     errors = []
     try:
         for continent, cities in continent_city.items():
@@ -374,6 +374,8 @@ if __name__ == "__main__":
         track = f"ERROR: --- {MODEL} | {CITY}: {e}"
         errors.append(track)
 
-    print("Done!\nThis are the errors we got:")
-    for error in errors:
-        print(error, sep="\n")
+    print("Done!")
+    if errors:
+        print("\nThis are the errors we got:")
+        for error in errors:
+            print(error, sep="\n")

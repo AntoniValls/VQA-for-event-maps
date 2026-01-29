@@ -84,7 +84,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     metadata = []
     detections = {}
 
-    for idx, image_id in enumerate(tqdm(image_ids, desc="Downloading images")):
+    for idx, image_id in enumerate(tqdm(image_ids[::2], desc="Downloading images")):
         if idx <= 600: # Limit
             # Get image metadata (including GPS and camera type)
             meta_url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields=id,thumb_2048_url,geometry,captured_at,compass_angle,camera_type,is_pano'
@@ -196,15 +196,14 @@ def mapillary_retrieve(mly_key, seq, output_folder):
 if __name__ == "__main__":
 
     todos = [
-        ("Taipei", "1HPEJCWTsEWaKrwdWjkeOA"),
-        ("Bombai", "1zbJhZOS05RN42vyQLmlkD"),
-        ("Singapore", "2mS9V3naPDQZeYNUAM7BOi")]
+        ("Soller", "MmGn6U0b3fgzeAQVj5EJBa")
+        ]
 
     # Configuration
     mly_key = 'MLY|25209140612031334|5db01650d125295c6bf8c95d9dae4418'
 
     for name, seq in todos:
-        output_folder = Path(f'../data/Asia/{name}/')
+        output_folder = Path(f'../data/Europe/{name}/')
 
         # Create output directories
         output_folder.mkdir(parents=True, exist_ok=True)

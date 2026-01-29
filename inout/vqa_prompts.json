@@ -49,7 +49,7 @@
         },
         {
           "id": "q_obstacle_blocking",
-          "text": "Is any static or movable object (not a person) blocking part of the direct path ahead?",
+          "text": "Is there any object (not a person) located in the walking path ahead that the pedestrian should be aware of?",
           "topic": "Obstacle Detection",
           "type": "boolean",
           "choices": ["Yes", "No"],

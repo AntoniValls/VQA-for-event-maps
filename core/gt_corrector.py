@@ -8,7 +8,7 @@ from flask import Flask, render_template_string, request, jsonify, send_from_dir
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-BASE_PATH = Path("../data/Asia/Bombai") 
+BASE_PATH = Path("../data/Africa/Marrakesh")  
 GT_PATH = BASE_PATH / "ground_truth_labels.jsonl"
 IMG_DIR = BASE_PATH / "images_selected"
 MODELS = ["llava", "instructblip", "qwen-vl", "vilt"]

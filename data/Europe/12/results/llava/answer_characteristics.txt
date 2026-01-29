@@ -1,10 +1,10 @@
 ANSWER CHARACTERISTICS REPORT
-Generated: 2026-01-28 12:28:06
+Generated: 2026-01-28 18:04:09
 ==============================
 
-PREDICTIONS (Total: 214)
-- Yes: 42 (19.6%)
-- No:  172 (80.4%)
+PREDICTIONS (Total: 222)
+- Yes: 44 (19.8%)
+- No:  178 (80.2%)
 - Other/Invalid: 0
 
 GROUND TRUTH (Total: 444)
