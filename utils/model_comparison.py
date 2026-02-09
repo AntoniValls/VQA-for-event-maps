@@ -1,152 +1,117 @@
 #!/usr/bin/env python3
 """
-Compare VQA model metrics across result folders.
-
-Assumed structure:
-  data/<Region>/<City>/results/<model_name>/
-      ├── metrics_summary.csv
-      └── metrics.json
-
-Outputs:
-  - Aggregated CSV
-  - Comparison plots (Accuracy, F1, Precision, Recall, Specificity)
+Performance comparison: Global summary of all models + 
+Targeted Topic and Continent analysis for Qwen-VL.
 """
 
 import os
-import json
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 from pathlib import Path
 
 # ================= CONFIG =================
-BASE_RESULTS_DIR = "../data"   # change if needed
-OUTPUT_DIR = "../model_comparison"
-METRICS_TO_PLOT = ["Accuracy", "F1", "Precision", "Recall", "Specificity"]
+BASE_RESULTS_DIR = "../data"   
+OUTPUT_DIR = "../data/model_comparison"
+METRICS = ["Accuracy", "F1", "Precision", "Recall", "Specificity"]
+FOCUS_MODEL = "qwen-vl" 
 # ==========================================
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-
 def collect_results(base_dir):
-    records = []
+    overall_records = []
+    topic_records = []
+    root_path = Path(base_dir)
 
-    for root, dirs, files in os.walk(base_dir):
-        if "metrics_summary.csv" in files:
-            root = Path(root)
-            model_name = root.name
+    for csv_path in root_path.rglob("metrics_summary.csv"):
+        root = csv_path.parent
+        model_name = root.name.lower()
+        parts = root.parts
+        try:
+            data_idx = parts.index("data")
+            region, city = parts[data_idx + 1], parts[data_idx + 2]
+        except (ValueError, IndexError):
+            region, city = "Unknown", "Unknown"
 
-            # Try to infer region / city from path
-            parts = root.parts
-            try:
-                region = parts[parts.index("data") + 1]
-                city = parts[parts.index("data") + 2]
-            except Exception:
-                region, city = "Unknown", "Unknown"
+        df = pd.read_csv(csv_path)
 
-            csv_path = root / "metrics_summary.csv"
-            json_path = root / "metrics.json"
+        # 1. Global/Overall data
+        overall = df[df["Category"] == "Overall"].copy()
+        if not overall.empty:
+            row = overall.iloc[0].to_dict()
+            row.update({"model": model_name, "region": region, "city": city})
+            overall_records.append(row)
 
-            df = pd.read_csv(csv_path)
+        # 2. Topic-based data
+        topics = df[df["Category"] == "Topic"].copy()
+        for _, t_row in topics.iterrows():
+            t_dict = t_row.to_dict()
+            t_dict.update({"model": model_name, "region": region, "city": city})
+            topic_records.append(t_dict)
 
-            # Only keep overall row
-            overall = df[df["Category"] == "Overall"].iloc[0]
+    return pd.DataFrame(overall_records), pd.DataFrame(topic_records)
 
-            record = {
-                "model": model_name,
-                "region": region,
-                "city": city,
-            }
-            print(record)
+# ---------------- Execution ----------------
+df_all, df_topics = collect_results(BASE_RESULTS_DIR)
 
-            for m in METRICS_TO_PLOT:
-                record[m] = overall[m]
+# Filter Qwen for specialized analysis
+df_qwen_all = df_all[df_all["model"] == FOCUS_MODEL]
+df_qwen_topics = df_topics[df_topics["model"] == FOCUS_MODEL]
 
-            # Load extra info from JSON if needed
-            if json_path.exists():
-                with open(json_path, "r") as f:
-                    metrics_json = json.load(f)
-                record["Total"] = metrics_json["overall_metrics"]["Total"]
+# ---------------- Terminal Reporting ----------------
 
-            records.append(record)
+# 1. GLOBAL SUMMARY
+print("\n" + "="*85)
+print("📊 GLOBAL MODEL SUMMARY (Mean across all cities)")
+print("="*85)
+summary_table = df_all.groupby("model")[METRICS].mean()
+print(summary_table.to_string(formatters={m: '{:.3f}'.format for m in METRICS}))
 
-    return pd.DataFrame(records)
+# 2. QWEN CONTINENT DEEP DIVE
+print("\n" + "="*85)
+print(f"🌍 CONTINENT ANALYSIS (Focus: {FOCUS_MODEL})")
+print("="*85)
+continent_qwen = df_qwen_all.groupby("region")[METRICS].mean()
+print(continent_qwen.to_string(formatters={m: '{:.3f}'.format for m in METRICS}))
 
-
-# ---------------- Collect ----------------
-df_all = collect_results(BASE_RESULTS_DIR)
-
-if df_all.empty:
-    raise RuntimeError("No metrics_summary.csv files found")
-
-# Save aggregated table
-csv_out = Path(OUTPUT_DIR) / "aggregated_model_metrics.csv"
-df_all.to_csv(csv_out, index=False)
-print(f"Saved aggregated metrics → {csv_out}")
+# 3. QWEN TOPIC DEEP DIVE
+print("\n" + "="*85)
+print(f"🧩 TOPIC ANALYSIS (Focus: {FOCUS_MODEL})")
+print("="*85)
+topic_qwen = df_qwen_topics.groupby("Subcategory")[METRICS].mean()
+print(topic_qwen.to_string(formatters={m: '{:.3f}'.format for m in METRICS}))
 
 
 # ---------------- Plotting ----------------
-import numpy as np
 
-# Aggregate: mean per model
-df_mean = df_all.groupby("model")[METRICS_TO_PLOT].mean()
-
-models = df_mean.index.tolist()
-n_models = len(models)
-n_metrics = len(METRICS_TO_PLOT)
-
-# Color map: consistent color per model
-cmap = plt.get_cmap("tab10")
-model_colors = {model: cmap(i % 10) for i, model in enumerate(models)}
-
-fig, axes = plt.subplots(
-    nrows=1,
-    ncols=n_metrics,
-    figsize=(4 * n_metrics, 5),
-    sharey=True
-)
-
-if n_metrics == 1:
-    axes = [axes]
-
-for ax, metric in zip(axes, METRICS_TO_PLOT):
-    values = df_mean[metric]
-
-    bars = ax.bar(
-        models,
-        values,
-        color=[model_colors[m] for m in models],
-        edgecolor="black",
-        linewidth=0.6
-    )
-
-    ax.set_title(metric)
-    ax.set_ylim(0, 1)
-    ax.set_xticks(range(n_models))
-    ax.set_xticklabels(models, rotation=30, ha="right")
-    ax.grid(axis="y", linestyle="--", alpha=0.4)
-
-axes[0].set_ylabel("Score")
-
-# Build legend once
-legend_handles = [
-    plt.Line2D([0], [0], color=model_colors[m], lw=6, label=m)
-    for m in models
-]
-
-fig.legend(
-    handles=legend_handles,
-    loc="upper center",
-    ncol=min(5, n_models),
-    bbox_to_anchor=(0.5, 1.05)
-)
-
-fig.suptitle("VQA Model Comparison", fontsize=14)
-
-out_path = Path(OUTPUT_DIR) / "model_comparison_all_metrics.png"
+# Plot 1: Global Model Comparison (F1 Score)
+plt.figure(figsize=(10, 6))
+summary_table['F1'].sort_values().plot(kind='bar', color='gray', edgecolor='black')
+plt.title("Global Model Comparison (Overall F1 Score)", fontsize=14)
+plt.ylabel("F1 Score")
+plt.grid(axis='y', linestyle='--', alpha=0.3)
 plt.tight_layout()
-plt.savefig(out_path, dpi=200, bbox_inches="tight")
-plt.close()
+plt.savefig(Path(OUTPUT_DIR) / "global_comparison_f1.png")
 
-print(f"Saved combined plot → {out_path}")
+# Plot 2: Qwen performance by Continent
+plt.figure(figsize=(12, 6))
+continent_qwen[METRICS].plot(kind='bar', figsize=(14, 7), edgecolor='black')
+plt.title(f"Qwen-VL: Performance Disaggregation by Continent", fontsize=16)
+plt.ylabel("Score")
+plt.ylim(0, 1.1)
+plt.legend(loc='upper right', ncol=len(METRICS))
+plt.grid(axis='y', linestyle='--', alpha=0.3)
+plt.tight_layout()
+plt.savefig(Path(OUTPUT_DIR) / "qwen_continent_deepdive.png")
 
-print("\n✅ Model comparison complete")
+# Plot 3: Qwen performance by Topic (F1 vs Recall)
+plt.figure(figsize=(14, 8))
+topic_qwen[['F1', 'Recall']].sort_values(by='F1').plot(kind='barh', figsize=(14, 8), edgecolor='black')
+plt.title(f"Qwen-VL: Safety Metrics (F1 & Recall) per Navigation Topic", fontsize=16)
+plt.xlabel("Score")
+plt.grid(axis='x', linestyle='--', alpha=0.3)
+plt.tight_layout()
+plt.savefig(Path(OUTPUT_DIR) / "qwen_topic_safety_analysis.png")
+
+print(f"\n✅ All reports and focused plots saved in: {OUTPUT_DIR}")

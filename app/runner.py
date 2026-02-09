@@ -10,7 +10,7 @@ import json
 import cv2
 from PIL import Image
 import torch
-from utils.utils import progress_bar
+from inout.utils import progress_bar
 
 from core.promptManager import PromptManager
 from core.vqaModel import VQAModel
@@ -322,7 +322,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
     if generate_map and gps_csv_path and os.path.exists(gps_csv_path):
         map_output_path = os.path.join(answers_folder, "interactive_map.html")
         try:
-            generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=False)
+            generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True)
         except Exception as e:
             print(f"Error generating map: {e}")
     
@@ -346,8 +346,9 @@ if __name__ == "__main__":
                     # "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
                     #"Africa": ["Kampala", "Lusaka", "Marrakesh"]
                     }
+    models = ["qwen-vl"]
     continent_city = {
-                    "America": ["Chihuahua"]
+                    "Asia": ["Bombai"]
                     }
    
     errors = []

@@ -141,7 +141,22 @@ class MetricsEvaluator:
             Dictionary containing TP, TN, FP, FN, Accuracy, Precision, Recall, Specificity, F1
         """
         # Convert to binary (yes=1, no=0)
-        y_true_binary = [1 if label.lower() == 'yes' else 0 for label in y_true]
+        y_true_binary = []
+        for label in y_true:
+            if isinstance(label, bool):
+                if label is True:
+                    label = 'yes'
+                elif label is False:
+                    label = 'no'
+            
+            if label.lower() == "yes":
+                y_true_binary.append(1)
+            elif label.lower() == "no":
+                y_true_binary.append(0)
+            else:
+                print(f"Warning: Unexpected GT label '{label}' - treating as 'no'")
+                y_true_binary.append(0)
+                
         y_pred_binary = [1 if label.lower() == 'yes' else 0 for label in y_pred]
         
         # Calculate confusion matrix components
@@ -182,91 +197,67 @@ class MetricsEvaluator:
         }
     
     def evaluate(self, save_detailed_results: bool = True) -> Dict:
-        """
-        Main evaluation function that calculates all metrics.
-        
-        Args:
-            save_detailed_results: Whether to save detailed per-question results
-        
-        Returns:
-            Dictionary containing all evaluation results
-        """
-        # Load data
+        """Main evaluation function updated with Topic Analysis."""
         self.load_data()
-        
-        # Match predictions to ground truth
         matching_results = self.match_predictions_to_ground_truth()
         matched_pairs = matching_results['matched_pairs']
         
         if not matched_pairs:
-            print("No matched pairs found between predictions and ground truth!")
             return None
         
-        print(f"\nMatched {len(matched_pairs)} prediction-ground truth pairs")
-        print(f"Unmatched predictions: {matching_results['unmatched_count']}")
-        
-        # Extract + normalize labels for overall metrics
         y_true_all = [self.normalize_yes_no(pair['gt_answer']) for pair in matched_pairs]
         y_pred_all = [self.normalize_yes_no(pair['pred_answer']) for pair in matched_pairs]
-        
-        # Calculate overall metrics
         overall_metrics = self.calculate_binary_metrics(y_true_all, y_pred_all)
         
-        # Calculate metrics by question type
-        metrics_by_question = {}
+        # --- Grouping Logic ---
         question_groups = {}
-        
-        # Group by question_id
+        level_groups = {}
+        topic_groups = {} # New: Group by parent topic
+
         for pair in matched_pairs:
+            # 1. Level Grouping
+            lvl = pair.get('level', 1)
+            level_groups.setdefault(lvl, {'y_true': [], 'y_pred': []})
+            level_groups[lvl]['y_true'].append(pair['gt_answer'])
+            level_groups[lvl]['y_pred'].append(pair['pred_answer'])
+
+            # 2. Question ID Grouping
             q_id = pair['question_id']
-            if q_id not in question_groups:
-                question_groups[q_id] = {'y_true': [], 'y_pred': [], 'short_label': pair.get('short_label', q_id)}
+            question_groups.setdefault(q_id, {'y_true': [], 'y_pred': [], 'label': pair.get('short_label', q_id)})
             question_groups[q_id]['y_true'].append(pair['gt_answer'])
             question_groups[q_id]['y_pred'].append(pair['pred_answer'])
+
+            # 3. Topic Grouping (The logic you requested)
+            # Use parent_question if it exists (Lv 2/3), otherwise use question_id (Lv 1)
+            topic = pair['ground_truth'].get('parent_question')
+            if not topic:
+                topic = pair['question_id']
+            
+            topic_groups.setdefault(topic, {'y_true': [], 'y_pred': []})
+            topic_groups[topic]['y_true'].append(pair['gt_answer'])
+            topic_groups[topic]['y_pred'].append(pair['pred_answer'])
+
+        # --- Calculate Metrics ---
+        metrics_by_level = {f"Level_{k}": {**self.calculate_binary_metrics(v['y_true'], v['y_pred']), 'sample_count': len(v['y_true'])} 
+                            for k, v in level_groups.items()}
         
-        # Calculate metrics for each question type
-        for q_id, data in question_groups.items():
-            metrics_by_question[q_id] = {
-                'short_label': data['short_label'],
-                'sample_count': len(data['y_true']),
-                **self.calculate_binary_metrics(data['y_true'], data['y_pred'])
-            }
+        metrics_by_question = {k: {**self.calculate_binary_metrics(v['y_true'], v['y_pred']), 'short_label': v['label'], 'sample_count': len(v['y_true'])} 
+                               for k, v in question_groups.items()}
         
-        # Calculate metrics by level
-        metrics_by_level = {}
-        level_groups = {}
-        
-        # Group by level
-        for pair in matched_pairs:
-            level = pair.get('level', 1)
-            if level not in level_groups:
-                level_groups[level] = {'y_true': [], 'y_pred': []}
-            level_groups[level]['y_true'].append(pair['gt_answer'])
-            level_groups[level]['y_pred'].append(pair['pred_answer'])
-        
-        # Calculate metrics for each level
-        for level, data in level_groups.items():
-            metrics_by_level[f'Level_{level}'] = {
-                'sample_count': len(data['y_true']),
-                **self.calculate_binary_metrics(data['y_true'], data['y_pred'])
-            }
-        
-        # Compile results
+        metrics_by_topic = {k: {**self.calculate_binary_metrics(v['y_true'], v['y_pred']), 'sample_count': len(v['y_true'])} 
+                            for k, v in topic_groups.items()}
+
         results = {
-            'model_info': {
-                'predictions_file': self.predictions_path,
-                'ground_truth_file': self.ground_truth_path,
-                'evaluation_timestamp': datetime.now().isoformat()
-            },
+            'model_info': {'predictions_file': self.predictions_path, 'evaluation_timestamp': datetime.now().isoformat()},
             'data_statistics': matching_results,
             'overall_metrics': overall_metrics,
             'metrics_by_level': metrics_by_level,
-            'metrics_by_question': metrics_by_question
+            'metrics_by_question': metrics_by_question,
+            'metrics_by_topic': metrics_by_topic # Added to results
         }
         
-        # Save detailed results if requested
         if save_detailed_results:
-            results['detailed_matches'] = matched_pairs[:100]  # Save first 100 for inspection
+            results['detailed_matches'] = matched_pairs[:100]
         
         return results
     
@@ -403,53 +394,47 @@ def evaluate_model_performance(predictions_path: str, ground_truth_path: str):
 
 
 def save_summary_csv(results: Dict, csv_path: str):
-    """Save a simplified CSV summary of the metrics."""
+    """Save a simplified CSV summary including Topics."""
     summary_data = []
     
-    # Overall metrics
-    overall = results['overall_metrics']
-    summary_data.append({
-        'Category': 'Overall',
-        'Subcategory': 'All',
-        'Samples': overall['Total'],
-        'Accuracy': f"{overall['Accuracy']:.3f}",
-        'F1': f"{overall['F1']:.3f}",
-        'Recall': f"{overall['Recall']:.3f}",
-        'Specificity': f"{overall['Specificity']:.3f}",
-        'Precision': f"{overall['Precision']:.3f}"
-    })
-    
-    # Metrics by level
-    for level, metrics in sorted(results.get('metrics_by_level', {}).items()):
+    # helper to append rows
+    def add_to_summary(category, sub_name, metrics):
         summary_data.append({
-            'Category': 'Level',
-            'Subcategory': level,
-            'Samples': metrics['sample_count'],
+            'Category': category,
+            'Subcategory': sub_name,
+            'Samples': metrics.get('sample_count', metrics.get('Total', 0)),
             'Accuracy': f"{metrics['Accuracy']:.3f}",
             'F1': f"{metrics['F1']:.3f}",
             'Recall': f"{metrics['Recall']:.3f}",
             'Specificity': f"{metrics['Specificity']:.3f}",
             'Precision': f"{metrics['Precision']:.3f}"
         })
+
+    # Add Overall
+    add_to_summary('Overall', 'All', results['overall_metrics'])
     
-    # Save to CSV
-    df = pd.DataFrame(summary_data)
-    df.to_csv(csv_path, index=False)
-    print(f"Summary CSV saved to: {csv_path}")
+    # Add Levels
+    for name, m in sorted(results.get('metrics_by_level', {}).items()):
+        add_to_summary('Level', name, m)
+        
+    # Add Topics
+    for name, m in sorted(results.get('metrics_by_topic', {}).items()):
+        add_to_summary('Topic', name, m)
+    
+    pd.DataFrame(summary_data).to_csv(csv_path, index=False)
 
 
 if __name__ == "__main__":
     # Example usage
     models = ["llava", "instructblip", "qwen-vl", "vilt"]
-    """ continent_city = {
-                    #"America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
-                    #"Europe": ["London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08"],
-                    #"Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    "Africa": [#"Kampala", "Lusaka",
-                         "Marrakesh"]
-                      }"""
+    continent_city = {
+                    "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia", "Chihuahua", "LaHabana"],
+                    "Europe": ["London1", "Munich", "Soller","Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
+                    "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
+                    "Africa": ["Kampala", "Lusaka","Marrakesh", "Acra"],
+                    "Oceania": ["Sidney", "Wellington"]
+                    }
     
-    continent_city = {"America": ["Ushuaia"]}
     for continent, cities in continent_city.items():
         for city in cities:
             for model in models:
@@ -458,7 +443,7 @@ if __name__ == "__main__":
                 CONTINENT = continent
                 CITY = city  # Use the current city in the list
 
-    predictions_path = f"../data/{CONTINENT}/{CITY}/results/{MODEL}/answers.jsonl"
-    ground_truth_path = f"../data/{CONTINENT}/{CITY}/ground_truth_labels.jsonl"
-    
-    evaluate_model_performance(predictions_path, ground_truth_path)
+                predictions_path = f"../data/{CONTINENT}/{CITY}/results/{MODEL}/answers.jsonl"
+                ground_truth_path = f"../data/{CONTINENT}/{CITY}/ground_truth_labels.jsonl"
+                
+                evaluate_model_performance(predictions_path, ground_truth_path)

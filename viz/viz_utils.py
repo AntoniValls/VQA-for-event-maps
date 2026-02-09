@@ -280,21 +280,40 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
             popup=folium.Popup(popup_html, max_width=350)
         ).add_to(m)
 
-    # 8. Updated Legend for Streets and Path
+    # 8. Updated Legend (Enlarged and Font-Optimized)
     legend_html = f'''
-    <div style="position: fixed; bottom: 30px; left: 30px; width: 180px; 
-    background-color: white; border:2px solid grey; z-index:9999; font-size:12px;
-    padding: 12px; border-radius: 8px; font-family: Arial; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
-    <b style="font-size:13px;">Map Legend</b><hr style="margin:5px 0;">
-    <b>Street Risk</b><br>
-    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.0)}; font-size:20px;"></i> [0.0] Safe<br>
-    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.3)}; font-size:20px;"></i> [0.3] Caution<br>
-    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.6)}; font-size:20px;"></i> [0.6] Danger<br>
-    <i class="fa fa-minus" style="color:{get_color_from_normalized(0.9)}; font-size:20px;"></i> [0.9] Very Danger<br>
-    <i class="fa fa-minus" style="color:#bdc3c7; font-size:20px;"></i> No Image Data<br>
-    <br>
-    <b>Travel Path</b><br>
-    <i class="fa fa-minus" style="color:#3498db; font-size:15px; border-bottom: 2px dashed #3498db;"></i> GPS Sequence
+    <div style="position: fixed; bottom: 50px; left: 50px; width: 240px; 
+    background-color: white; border:3px solid #7f8c8d; z-index:9999; font-size:16px;
+    padding: 15px; border-radius: 12px; font-family: 'Segoe UI', Arial, sans-serif; 
+    box-shadow: 4px 4px 15px rgba(0,0,0,0.3); line-height: 1.6;">
+    <b style="font-size: 18px; border-bottom: 1px solid #ccc; display: block; margin-bottom: 10px;">Safety Legend</b>
+    
+    <div style="margin-bottom: 5px;">
+        <i class="fa fa-square" style="color:{get_color_from_normalized(0.0)}; font-size:22px; vertical-align: middle;"></i> 
+        <span style="margin-left: 10px;">Very Safe</span>
+    </div>
+    <div style="margin-bottom: 5px;">
+        <i class="fa fa-square" style="color:{get_color_from_normalized(0.3)}; font-size:22px; vertical-align: middle;"></i> 
+        <span style="margin-left: 10px;">Caution</span>
+    </div>
+    <div style="margin-bottom: 5px;">
+        <i class="fa fa-square" style="color:{get_color_from_normalized(0.6)}; font-size:22px; vertical-align: middle;"></i> 
+        <span style="margin-left: 10px;">Danger</span>
+    </div>
+    <div style="margin-bottom: 5px;">
+        <i class="fa fa-square" style="color:{get_color_from_normalized(0.9)}; font-size:22px; vertical-align: middle;"></i> 
+        <span style="margin-left: 10px;">High Risk</span>
+    </div>
+    <div style="margin-bottom: 15px;">
+        <i class="fa fa-square" style="color:#bdc3c7; font-size:22px; vertical-align: middle;"></i> 
+        <span style="margin-left: 10px; color: #7f8c8d;">No Data</span>
+    </div>
+
+    <b style="font-size: 16px; display: block; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">Navigation</b>
+    <div style="margin-top: 5px;">
+        <span style="display: inline-block; width: 30px; border-bottom: 4px dashed #3498db; vertical-align: middle; margin-bottom: 6px;"></span>
+        <span style="margin-left: 10px;">GPS Path</span>
+    </div>
     </div>
     '''
     m.get_root().html.add_child(folium.Element(legend_html))
