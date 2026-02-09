@@ -8,7 +8,7 @@ from flask import Flask, render_template_string, request, jsonify, send_from_dir
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-BASE_PATH = Path("../data/Africa/Marrakesh")  
+BASE_PATH = Path("../data/Africa/Lusaka/")  # left: Oceania + Chihuahua
 GT_PATH = BASE_PATH / "ground_truth_labels.jsonl"
 IMG_DIR = BASE_PATH / "images_selected"
 MODELS = ["llava", "instructblip", "qwen-vl", "vilt"]
@@ -197,6 +197,12 @@ def normalize(text):
     """Standardizes answers: lowercases, strips whitespace, and removes punctuation."""
     if not text:
         return ""
+    if isinstance(text, bool):
+        print(f"Warning: Expected string but got boolean '{text}'. Converting to string.")
+        if text is True:
+            return "yes"
+        elif text is False:
+            return "no"
     # Standardize 'no.' or 'No' to 'no'
     return text.lower().strip().translate(str.maketrans('', '', string.punctuation))
 

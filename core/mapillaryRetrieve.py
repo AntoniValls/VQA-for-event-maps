@@ -196,7 +196,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
 if __name__ == "__main__":
 
     todos = [
-        ("Soller", "MmGn6U0b3fgzeAQVj5EJBa")
+        ("Munich", "eCs1ItVZvjOpfF43AQ6zYq")
         ]
 
     # Configuration

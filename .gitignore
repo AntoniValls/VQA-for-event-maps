@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-config/smartphone_ip_address.txt
+cache/
 *.jpg
 *.jpeg
 *.png
