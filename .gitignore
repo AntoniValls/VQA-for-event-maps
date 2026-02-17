@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
+viz/generate_paper_figures.py
 cache/
 *.jpg
 *.jpeg

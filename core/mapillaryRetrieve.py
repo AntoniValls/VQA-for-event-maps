@@ -87,7 +87,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     for idx, image_id in enumerate(tqdm(image_ids[::2], desc="Downloading images")):
         if idx <= 600: # Limit
             # Get image metadata (including GPS and camera type)
-            meta_url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields=id,thumb_2048_url,geometry,captured_at,compass_angle,camera_type,is_pano'
+            meta_url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields=id,thumb_2048_url,geometry,captured_at,compass_angle,camera_type,is_pano,camera_parameters,width,height'            
             meta_response = requests.get(meta_url)
             
             if meta_response.status_code == 200:
@@ -101,7 +101,10 @@ def mapillary_retrieve(mly_key, seq, output_folder):
                 compass_angle = image_data.get('compass_angle', 0)
                 is_pano = image_data.get('is_pano', False)
                 camera_type = image_data.get('camera_type', 'unknown')
-                
+                camera_parameters = image_data.get('camera_parameters', 'unknown')
+                heigh = image_data.get('height', 'unknown')
+                width = image_data.get('width', 'unknown')
+
                 # Download the image
                 image_url = image_data.get('thumb_2048_url')
                 if image_url:
@@ -136,7 +139,10 @@ def mapillary_retrieve(mly_key, seq, output_folder):
                             'compass_angle': compass_angle,
                             'is_pano': is_pano,
                             'camera_type': camera_type,
-                            'image_type': image_type
+                            'image_type': image_type,
+                            'camera_parameters': camera_parameters,
+                            'width': width,
+                            'heigh': heigh
                         })
                 
                 # Get detections (optional)
@@ -151,6 +157,8 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     # Step 3: Save metadata to JSON files
     print("\nSaving metadata...")
 
+    print(metadata)
+
     # Save GPS positions
     gps_data = [{
         'image_id': item['image_id'],
@@ -160,7 +168,10 @@ def mapillary_retrieve(mly_key, seq, output_folder):
         'captured_at': item['captured_at'],
         'compass_angle': item['compass_angle'],
         'is_pano': item['is_pano'],
-        'image_type': item['image_type']
+        'image_type': item['image_type'],
+        'camera_parameters': item['camera_parameters'],
+        'width': item['width'],
+        'heigh': item['heigh']
     } for item in metadata]
 
     with open(output_folder / 'gps_positions.json', 'w') as f:
@@ -196,7 +207,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
 if __name__ == "__main__":
 
     todos = [
-        ("Munich", "eCs1ItVZvjOpfF43AQ6zYq")
+        ("Shit", "mS0gL3zENAanm4PgTEpB1g")
         ]
 
     # Configuration

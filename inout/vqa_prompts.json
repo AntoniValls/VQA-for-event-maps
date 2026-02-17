@@ -529,6 +529,15 @@
         "q_surface_hazardous"
       ]
     },
+    "not_sidewalk": {
+      "name": "Ped. not on sidewalk questions",
+      "description": "Level 1 + Pedestrian not on sidewalk",
+      "enabled_questions":[
+        "q_pedestrian_not_on_sidewalk",
+        "q_pedestrian_on_road",
+        "q_pedestrian_on_unpaved"
+      ]
+    },
     "crossing": {
       "name": "Crossing Assessment",
       "description": "Level 1 + all crossing detail questions",

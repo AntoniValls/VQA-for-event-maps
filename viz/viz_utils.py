@@ -277,12 +277,12 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
             [lat, lon], radius=6, 
             color='white', weight=1,
             fill=True, fill_color=get_color_from_normalized(norm_score), fill_opacity=1,
-            popup=folium.Popup(popup_html, max_width=350)
+            popup=folium.Popup(popup_html)
         ).add_to(m)
 
     # 8. Updated Legend (Enlarged and Font-Optimized)
     legend_html = f'''
-    <div style="position: fixed; bottom: 50px; left: 50px; width: 240px; 
+    <div style="position: fixed; bottom: 30px; left: 100px; width: 240px; 
     background-color: white; border:3px solid #7f8c8d; z-index:9999; font-size:16px;
     padding: 15px; border-radius: 12px; font-family: 'Segoe UI', Arial, sans-serif; 
     box-shadow: 4px 4px 15px rgba(0,0,0,0.3); line-height: 1.6;">
@@ -290,7 +290,7 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
     
     <div style="margin-bottom: 5px;">
         <i class="fa fa-square" style="color:{get_color_from_normalized(0.0)}; font-size:22px; vertical-align: middle;"></i> 
-        <span style="margin-left: 10px;">Very Safe</span>
+        <span style="margin-left: 10px;">Safe</span>
     </div>
     <div style="margin-bottom: 5px;">
         <i class="fa fa-square" style="color:{get_color_from_normalized(0.3)}; font-size:22px; vertical-align: middle;"></i> 
@@ -324,8 +324,8 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
 
 if __name__ == "__main__":
     
-    CONTINENT = "Asia"
-    CITY = "Bombai"
+    CONTINENT = "America"
+    CITY = "NewYork"
     MODEL = "qwen-vl"
 
     gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"

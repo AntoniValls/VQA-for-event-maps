@@ -9,225 +9,160 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 import pandas as pd
 from datetime import datetime
-
+import string
 
 class MetricsEvaluator:
-    """Evaluates VQA model predictions against ground truth labels."""
+    """Evaluates VQA model predictions against ground truth labels including Risk Score Error."""
     
+    # Risk Score Configuration
+    HAZARD_CONFIG = {
+        "CRITICAL": {"weight": 1.0, "ids": ["q_construction_visible", "q_surface_hazardous", "q_pedestrian_not_on_sidewalk"]},
+        "HIGH":     {"weight": 0.6, "ids": ["q_crossing_nearby", "q_stairs_visible", "q_obstacle_blocking"]},
+        "LOW":      {"weight": 0.3, "ids": ["q_pedestrians_present", "q_vehicle_nearby"]}
+    }
+    SAFETY_REWARD_RATIO = 1/8
+
     def __init__(self, predictions_path: str, ground_truth_path: str):
-        """
-        Initialize the evaluator with paths to predictions and ground truth.
-        
-        Args:
-            predictions_path: Path to the predictions JSONL file
-            ground_truth_path: Path to the ground truth JSONL file
-        """
         self.predictions_path = predictions_path
         self.ground_truth_path = ground_truth_path
         self.predictions = []
         self.ground_truth = []
-        
+        # Map IDs to weights for risk calculation
+        self.weight_lookup = {qid: cfg["weight"] for cfg in self.HAZARD_CONFIG.values() for qid in cfg["ids"]}
+
     def load_data(self) -> Tuple[List[Dict], List[Dict]]:
-        """Load predictions and ground truth from JSONL files, handling missing newlines."""
-        
         def parse_mixed_json(path):
             data = []
+            if not os.path.exists(path): return []
             with open(path, 'r', encoding='utf-8') as f:
-                # Read the whole content to handle cases where newlines are missing
-                content = f.read()
-                # This regex splits by newlines OR identifies the boundary between }{ 
-                # It replaces }{ with }\n{ so we can use splitlines()
-                normalized_content = content.replace('}{', '}\n{')
-                
-                for line in normalized_content.splitlines():
+                content = f.read().replace('}{', '}\n{')
+                for line in content.splitlines():
                     if line.strip():
-                        try:
-                            data.append(json.loads(line))
-                        except json.JSONDecodeError as e:
-                            # This will help you identify if there's actual corruption 
-                            # (like the terminal prompt (.venv) we saw earlier)
-                            print(f"Skipping invalid JSON entry in {path}: {e}")
+                        try: data.append(json.loads(line))
+                        except json.JSONDecodeError: continue
             return data
 
-        # Load predictions
         self.predictions = parse_mixed_json(self.predictions_path)
-        
-        # Load ground truth
         self.ground_truth = parse_mixed_json(self.ground_truth_path)
-        
-        print(f"Loaded {len(self.predictions)} predictions")
-        print(f"Loaded {len(self.ground_truth)} ground truth labels")
-        
         return self.predictions, self.ground_truth
-    
-    def match_predictions_to_ground_truth(self) -> Dict:
-        """
-        Match predictions to ground truth based on image and question ID.
-        If a ground truth pair appears multiple times, the last one is taken as true (this could happen because of a bug!)
-        
-        Returns:
-            Dictionary with matched pairs and statistics
-        """
-        # Create lookup dictionary for ground truth
-        gt_lookup = {}
-        duplicates_count = 0
 
-        for gt in self.ground_truth:
-            key = (gt.get('image_name'), gt.get('question_id'))
-            if key in gt_lookup:
-                duplicates_count += 1
-            gt_lookup[key] = gt
+    def calculate_risk_score(self, questions_dict: Dict) -> float:
+        """Calculates a normalized risk score [0, 1] for a set of answers for one image."""
+        primary_ids = list(self.weight_lookup.keys())
+        active_weights = [self.weight_lookup.get(qid, 0) for qid in primary_ids if qid in questions_dict]
+        max_theoretical = sum(active_weights)
+        
+        if max_theoretical <= 0:
+            return 0.0
+
+        net_score = 0.0
+        for q_id in primary_ids:
+            if q_id not in questions_dict:
+                continue
+
+            ans = questions_dict[q_id].get('answer', '').lower().strip().translate(str.maketrans('', '', string.punctuation))
+            weight = self.weight_lookup.get(q_id, 0)
             
-        if duplicates_count > 0:
-            print(f"Found {duplicates_count} duplicate GT entries. Using the most recent (last) entries.")
-        
-        # Match predictions to ground truth
-        matched_pairs = []
-        unmatched_predictions = []
-        
-        # Similarly for predictions: if a model answered twice, we take the last answer
-        pred_lookup = {}
-        for pred in self.predictions:
-            key = (pred.get('image_name'), pred.get('question_id'))
-            pred_lookup[key] = pred
+            is_yes = any(pos in ans for pos in ['yes', 'true', 'hazard'])
+            is_no = any(neg in ans for neg in ['no', 'false', 'safe'])
+            
+            if is_yes:
+                net_score += weight
+            elif is_no:
+                net_score -= (weight * self.SAFETY_REWARD_RATIO)
 
-        # Now iterate through the de-duplicated predictions to match with GT
-        for key, pred in pred_lookup.items():
-            if key in gt_lookup:
-                matched_pairs.append({
-                    'prediction': pred,
-                    'ground_truth': gt_lookup[key],
-                    'image_name': pred.get('image_name'),
-                    'question_id': pred.get('question_id'),
-                    'pred_answer': pred.get('answer'),
-                    'gt_answer': gt_lookup[key].get('answer'),
-                    'level': pred.get('level'),
-                    'short_label': pred.get('short_label', gt_lookup[key].get('short_label'))
-                })
-            else:
-                unmatched_predictions.append(pred)
-        
-        return {
-            'matched_pairs': matched_pairs,
-            'unmatched_predictions': unmatched_predictions,
-            'total_predictions': len(self.predictions),
-            'total_ground_truth': len(self.ground_truth),
-            'matched_count': len(matched_pairs),
-            'unmatched_count': len(unmatched_predictions)
-        }
-    
+        return min(max(0, net_score) / max_theoretical, 1.0)
+
     def normalize_yes_no(self, answer: str) -> str:
-        if not isinstance(answer, str):
-            return answer
-
+        if not isinstance(answer, str): return "no"
         a = answer.strip().lower()
+        if a.startswith("yes"): return "yes"
+        if a.startswith("no"): return "no"
+        return a
 
-        if a.startswith("yes"):
-            return "yes"
-        if a.startswith("no"):
-            return "no"
-
-        return a  # fallback for unexpected values
-    
     def calculate_binary_metrics(self, y_true: List[str], y_pred: List[str]) -> Dict:
-        """
-        Calculate binary classification metrics.
+        y_true_binary = [1 if self.normalize_yes_no(l) == "yes" else 0 for l in y_true]
+        y_pred_binary = [1 if self.normalize_yes_no(l) == "yes" else 0 for l in y_pred]
         
-        Args:
-            y_true: List of ground truth labels ('yes' or 'no')
-            y_pred: List of predicted labels ('yes' or 'no')
-        
-        Returns:
-            Dictionary containing TP, TN, FP, FN, Accuracy, Precision, Recall, Specificity, F1
-        """
-        # Convert to binary (yes=1, no=0)
-        y_true_binary = []
-        for label in y_true:
-            if isinstance(label, bool):
-                if label is True:
-                    label = 'yes'
-                elif label is False:
-                    label = 'no'
-            
-            if label.lower() == "yes":
-                y_true_binary.append(1)
-            elif label.lower() == "no":
-                y_true_binary.append(0)
-            else:
-                print(f"Warning: Unexpected GT label '{label}' - treating as 'no'")
-                y_true_binary.append(0)
-                
-        y_pred_binary = [1 if label.lower() == 'yes' else 0 for label in y_pred]
-        
-        # Calculate confusion matrix components
         TP = sum(1 for t, p in zip(y_true_binary, y_pred_binary) if t == 1 and p == 1)
         TN = sum(1 for t, p in zip(y_true_binary, y_pred_binary) if t == 0 and p == 0)
         FP = sum(1 for t, p in zip(y_true_binary, y_pred_binary) if t == 0 and p == 1)
         FN = sum(1 for t, p in zip(y_true_binary, y_pred_binary) if t == 1 and p == 0)
         
-        # Calculate metrics
         total = TP + TN + FP + FN
-        
-        # Accuracy: (TP + TN) / Total
         accuracy = (TP + TN) / total if total > 0 else 0
-        
-        # Precision: TP / (TP + FP)
         precision = TP / (TP + FP) if (TP + FP) > 0 else 0
-        
-        # Recall (Sensitivity): TP / (TP + FN)
         recall = TP / (TP + FN) if (TP + FN) > 0 else 0
-        
-        # Specificity: TN / (TN + FP)
         specificity = TN / (TN + FP) if (TN + FP) > 0 else 0
-        
-        # F1 Score: 2 * (Precision * Recall) / (Precision + Recall)
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
         
-        return {
-            'TP': TP,
-            'TN': TN,
-            'FP': FP,
-            'FN': FN,
-            'Total': total,
-            'Accuracy': accuracy,
-            'Precision': precision,
-            'Recall': recall,
-            'Specificity': specificity,
-            'F1': f1
-        }
-    
+        return {'TP': TP, 'TN': TN, 'FP': FP, 'FN': FN, 'Total': total, 
+                'Accuracy': accuracy, 'Precision': precision, 'Recall': recall, 
+                'Specificity': specificity, 'F1': f1}
+
     def evaluate(self, save_detailed_results: bool = True) -> Dict:
-        """Main evaluation function updated with Topic Analysis."""
         self.load_data()
-        matching_results = self.match_predictions_to_ground_truth()
-        matched_pairs = matching_results['matched_pairs']
         
-        if not matched_pairs:
-            return None
+        # 1. Group data by image for risk calculation
+        img_gt_map = {} # {image_name: {q_id: data}}
+        for gt in self.ground_truth:
+            img_gt_map.setdefault(gt['image_name'], {})[gt['question_id']] = gt
+            
+        img_pred_map = {}
+        for pred in self.predictions:
+            img_pred_map.setdefault(pred['image_name'], {})[pred['question_id']] = pred
+
+        # 2. Match pairs for binary metrics
+        matched_pairs = []
+        for img_name, preds in img_pred_map.items():
+            if img_name in img_gt_map:
+                for q_id, pred_data in preds.items():
+                    if q_id in img_gt_map[img_name]:
+                        matched_pairs.append({
+                            'image_name': img_name,
+                            'question_id': q_id,
+                            'pred_answer': pred_data.get('answer'),
+                            'gt_answer': img_gt_map[img_name][q_id].get('answer'),
+                            'level': pred_data.get('level', 1),
+                            'ground_truth': img_gt_map[img_name][q_id]
+                        })
+
+        if not matched_pairs: return None
+
+        # 3. Calculate Risk Errors
+        risk_errors = []
+        for img_name in img_gt_map:
+            if img_name in img_pred_map:
+                gt_risk = self.calculate_risk_score(img_gt_map[img_name])
+                pred_risk = self.calculate_risk_score(img_pred_map[img_name])
+                risk_errors.append(abs(gt_risk - pred_risk))
         
-        y_true_all = [self.normalize_yes_no(pair['gt_answer']) for pair in matched_pairs]
-        y_pred_all = [self.normalize_yes_no(pair['pred_answer']) for pair in matched_pairs]
+        avg_risk_error = sum(risk_errors) / len(risk_errors) if risk_errors else 0
+
+        # 4. Standard Metrics grouping (Level, Topic, etc.)
+        y_true_all = [pair['gt_answer'] for pair in matched_pairs]
+        y_pred_all = [pair['pred_answer'] for pair in matched_pairs]
         overall_metrics = self.calculate_binary_metrics(y_true_all, y_pred_all)
-        
-        # --- Grouping Logic ---
+        overall_metrics['Risk_MAE'] = avg_risk_error # Add new metric here
+    
+        # 5. Grouping Logic ---
         question_groups = {}
         level_groups = {}
-        topic_groups = {} # New: Group by parent topic
-
+        topic_groups = {} 
         for pair in matched_pairs:
-            # 1. Level Grouping
+            # Level Grouping
             lvl = pair.get('level', 1)
             level_groups.setdefault(lvl, {'y_true': [], 'y_pred': []})
             level_groups[lvl]['y_true'].append(pair['gt_answer'])
             level_groups[lvl]['y_pred'].append(pair['pred_answer'])
 
-            # 2. Question ID Grouping
+            # Question ID Grouping
             q_id = pair['question_id']
             question_groups.setdefault(q_id, {'y_true': [], 'y_pred': [], 'label': pair.get('short_label', q_id)})
             question_groups[q_id]['y_true'].append(pair['gt_answer'])
             question_groups[q_id]['y_pred'].append(pair['pred_answer'])
-
-            # 3. Topic Grouping (The logic you requested)
+            
+            # Topic Grouping 
             # Use parent_question if it exists (Lv 2/3), otherwise use question_id (Lv 1)
             topic = pair['ground_truth'].get('parent_question')
             if not topic:
@@ -248,8 +183,18 @@ class MetricsEvaluator:
                             for k, v in topic_groups.items()}
 
         results = {
+            'overall_metrics': overall_metrics,
+            'risk_statistics': {
+                'total_images_evaluated': len(risk_errors),
+                'mean_absolute_error': avg_risk_error
+            }
+        }
+        results = {
             'model_info': {'predictions_file': self.predictions_path, 'evaluation_timestamp': datetime.now().isoformat()},
-            'data_statistics': matching_results,
+            'risk_statistics': {
+                'total_images_evaluated': len(risk_errors),
+                'mean_absolute_error': avg_risk_error
+            },
             'overall_metrics': overall_metrics,
             'metrics_by_level': metrics_by_level,
             'metrics_by_question': metrics_by_question,
@@ -276,9 +221,10 @@ class MetricsEvaluator:
         
         print(f"\nResults saved to: {output_path}")
     
+    
     def print_summary(self, results: Dict):
         """
-        Print a formatted summary of the evaluation results.
+        Print a formatted summary of the evaluation results including topic analysis.
         
         Args:
             results: Dictionary containing evaluation results
@@ -295,6 +241,7 @@ class MetricsEvaluator:
         print(f"  Recall:      {overall['Recall']:.3f}")
         print(f"  Specificity: {overall['Specificity']:.3f}")
         print(f"  Precision:   {overall['Precision']:.3f}")
+        print(f"  Risk MAE (Error): {overall.get('Risk_MAE', 0.0):.4f}")
         
         print(f"\n  Confusion Matrix:")
         print(f"    TP: {overall['TP']:4d}  FP: {overall['FP']:4d}")
@@ -308,8 +255,21 @@ class MetricsEvaluator:
                 print(f"\n  {level} (n={metrics['sample_count']}):")
                 print(f"    Accuracy: {metrics['Accuracy']:.3f}  F1: {metrics['F1']:.3f}")
                 print(f"    Recall: {metrics['Recall']:.3f}  Specificity: {metrics['Specificity']:.3f}")
+
+        # Metrics by topic (The new section)
+        if 'metrics_by_topic' in results:
+            print("\n" + "-"*70)
+            print("METRICS BY TOPIC (sorted by F1):")
+            sorted_topics = sorted(
+                results['metrics_by_topic'].items(),
+                key=lambda x: x[1]['F1'],
+                reverse=True
+            )
+            for topic, metrics in sorted_topics:
+                print(f"\n  Topic: {topic} (n={metrics['sample_count']})")
+                print(f"    F1: {metrics['F1']:.3f} | Acc: {metrics['Accuracy']:.3f} | Rec: {metrics['Recall']:.3f}")
         
-        # Top performing questions
+        # Top/Bottom performing questions
         if 'metrics_by_question' in results:
             print("\n" + "-"*70)
             print("TOP PERFORMING QUESTIONS (by F1 score):")
@@ -407,7 +367,8 @@ def save_summary_csv(results: Dict, csv_path: str):
             'F1': f"{metrics['F1']:.3f}",
             'Recall': f"{metrics['Recall']:.3f}",
             'Specificity': f"{metrics['Specificity']:.3f}",
-            'Precision': f"{metrics['Precision']:.3f}"
+            'Precision': f"{metrics['Precision']:.3f}",
+            'Risk_MAE': f"{metrics.get('Risk_MAE', 0.0):.4f}"
         })
 
     # Add Overall

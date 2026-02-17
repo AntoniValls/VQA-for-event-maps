@@ -1,5 +1,5 @@
 ANSWER CHARACTERISTICS REPORT
-Generated: 2026-02-09 11:43:52
+Generated: 2026-02-13 12:02:56
 ==============================
 
 PREDICTIONS (Total: 358)
@@ -9,5 +9,5 @@ PREDICTIONS (Total: 358)
 
 GROUND TRUTH (Total: 487)
 - Yes: 182 (37.4%)
-- No:  304 (62.4%)
-- Other/Invalid: 1
+- No:  305 (62.6%)
+- Other/Invalid: 0
