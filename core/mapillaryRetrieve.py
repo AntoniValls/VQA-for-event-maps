@@ -112,6 +112,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
                     if img_response.status_code == 200:
                         # Process image based on whether it's 360 or not
                         if is_pano or camera_type == 'spherical':
+                            print("ATENTION: images are 360s")
                             # Extract front view from 360 image
                             front_view_img = extract_front_view(
                                 img_response.content, 
@@ -132,6 +133,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
                         # Store metadata
                         metadata.append({
                             'image_id': image_id,
+                            'seq_id': seq,
                             'filename': image_filename,
                             'latitude': lat,
                             'longitude': lon,
@@ -144,12 +146,6 @@ def mapillary_retrieve(mly_key, seq, output_folder):
                             'width': width,
                             'heigh': heigh
                         })
-                
-                # Get detections (optional)
-                dets_url = f'https://graph.mapillary.com/{image_id}/detections?access_token={mly_key}&fields=geometry,value'
-                dets_response = requests.get(dets_url)
-                if dets_response.status_code == 200:
-                    detections[image_id] = dets_response.json()['data']
             
             # Rate limiting - be nice to the API
             time.sleep(0.1)
@@ -173,13 +169,6 @@ def mapillary_retrieve(mly_key, seq, output_folder):
         'width': item['width'],
         'heigh': item['heigh']
     } for item in metadata]
-
-    with open(output_folder / 'gps_positions.json', 'w') as f:
-        json.dump(gps_data, f, indent=2)
-
-    # Save detections
-    with open(output_folder / 'detections.json', 'w') as f:
-        json.dump(detections, f, indent=2)
 
     # Save complete metadata
     with open(output_folder / 'metadata.json', 'w') as f:
