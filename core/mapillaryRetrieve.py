@@ -153,8 +153,6 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     # Step 3: Save metadata to JSON files
     print("\nSaving metadata...")
 
-    print(metadata)
-
     # Save GPS positions
     gps_data = [{
         'image_id': item['image_id'],
@@ -196,14 +194,14 @@ def mapillary_retrieve(mly_key, seq, output_folder):
 if __name__ == "__main__":
 
     todos = [
-        ("Shit", "mS0gL3zENAanm4PgTEpB1g")
+        ("NewYork", "5xBMc2sYv7nOLRUSoCrw8f")
         ]
 
     # Configuration
     mly_key = 'MLY|25209140612031334|5db01650d125295c6bf8c95d9dae4418'
 
     for name, seq in todos:
-        output_folder = Path(f'../data/Europe/{name}/')
+        output_folder = Path(f'../data/America/{name}/')
 
         # Create output directories
         output_folder.mkdir(parents=True, exist_ok=True)

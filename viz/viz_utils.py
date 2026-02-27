@@ -262,6 +262,7 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
         cat_tables = {}
         for q_id, ans in img_questions.items():
             cid = question_to_category.get(q_id, 'Other')
+            print(f"{q_id}, {cid}")
             if cid not in cat_tables: cat_tables[cid] = []
             val = ans.get('answer', 'N/A')
             color = 'red' if 'yes' in val.lower() else 'green' if 'no' in val.lower() else 'black'
@@ -324,12 +325,12 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
 
 if __name__ == "__main__":
     
-    CONTINENT = "America"
-    CITY = "NewYork"
+    CONTINENT = "Asia"
+    CITY = "Bombai"
     MODEL = "qwen-vl"
 
     gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"
     answers_path =  os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/answers.jsonl")
-    map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interative_map.html")
+    map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interactive_map.html")
     image_dir = os.path.join(Path(gps_csv_path).parent, "images_selected")
-    generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True)
+    generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=False)

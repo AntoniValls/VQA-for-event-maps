@@ -81,10 +81,11 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
     
     # Step 2: Process Level 2 follow-up questions based on Level 1 answers
     print(f"\n{'='*70}")
-    print(f"LEVEL 2 FOLLOW-UP QUESTIONS")                                                                               # LEVEL 3 NOT DONE
+    print(f"LEVEL 2 FOLLOW-UP QUESTIONS")                                                                               
     print(f"{'='*70}")
     
     followup_count = 0
+    followups_array = []
     for question_data in initial_prompts:
         question_id = question_data['id']
         short_label = prompt_manager.get_short_label(question_data)
@@ -95,9 +96,10 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
             
             # Get follow-up questions
             followups = prompt_manager.get_followup_prompts(question_id, answer)
-            
+                    
             if followups:
                 print(f"\n--- Follow-ups for '{short_label}' (answered: {answer}) ---")
+                followups_array.append(followups)    
                 followup_count += len(followups)
                 
                 for followup_q in followups:
@@ -148,67 +150,67 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
 
     # Step 3: Process Level 3 follow-up questions based on Level 2 answers
     print(f"\n{'='*70}")
-    print(f"LEVEL 3 FOLLOW-UP QUESTIONS")                                                                               # LEVEL 3 NOT DONE
+    print(f"LEVEL 3 FOLLOW-UP QUESTIONS")                                                                              
     print(f"{'='*70}")
     
-    followups2 = followups.copy()
     followup_count = 0
-    for question_data in followups2:
-        question_id = question_data['id']
-        short_label = prompt_manager.get_short_label(question_data)
-        
-        # Get the answer for this Level 1 question
-        if short_label in answers_dict:
-            answer = answers_dict[short_label]['answer']
+    for followups2 in followups_array:
+        for question_data in followups2:
+            question_id = question_data['id']
+            short_label = prompt_manager.get_short_label(question_data)
             
-            # Get follow-up questions
-            followups = prompt_manager.get_followup_prompts(question_id, answer)
-            
-            if followups:
-                print(f"\n--- Follow-ups for '{short_label}' (answered: {answer}) ---")
-                followup_count += len(followups)
+            # Get the answer for this Level 1 question
+            if short_label in answers_dict:
+                answer = answers_dict[short_label]['answer']
                 
-                for followup_q in followups:
-                    followup_id = followup_q['id']
-                    followup_prompt = followup_q['text']
-                    full_followup = prompt_manager.get_full_prompt(followup_q)
-                    followup_label = prompt_manager.get_short_label(followup_q)
+                # Get follow-up questions
+                followups = prompt_manager.get_followup_prompts(question_id, answer)
+                
+                if followups:
+                    print(f"\n--- Follow-ups for '{short_label}' (answered: {answer}) ---")
+                    followup_count += len(followups)
                     
-                    # Process follow-up question
-                    try:
-                        followup_answer, followup_conf = vqa_model.process_question(image, full_followup)
-                    except Exception as e:
-                        print(f"Error processing follow-up '{followup_id}': {e}")
+                    for followup_q in followups:
+                        followup_id = followup_q['id']
+                        followup_prompt = followup_q['text']
+                        full_followup = prompt_manager.get_full_prompt(followup_q)
+                        followup_label = prompt_manager.get_short_label(followup_q)
+                        
+                        # Process follow-up question
                         try:
-                            followup_answer, followup_conf = vqa_model.process_question(image, followup_prompt)
-                        except Exception as e2:
-                            print(f"Error processing follow-up '{followup_id}' with basic prompt: {e2}")
-                            followup_answer, followup_conf = None, None
-                    
-                    # Store answer
-                    if followup_answer is not None:
-                        answers_dict[followup_label] = {
-                            'answer': followup_answer,
-                            'confidence': followup_conf
-                        }
+                            followup_answer, followup_conf = vqa_model.process_question(image, full_followup)
+                        except Exception as e:
+                            print(f"Error processing follow-up '{followup_id}': {e}")
+                            try:
+                                followup_answer, followup_conf = vqa_model.process_question(image, followup_prompt)
+                            except Exception as e2:
+                                print(f"Error processing follow-up '{followup_id}' with basic prompt: {e2}")
+                                followup_answer, followup_conf = None, None
                         
-                        result_obj = {
-                            "question_id": followup_id,
-                            "question": full_followup,
-                            "answer": followup_answer,
-                            "confidence": followup_conf,
-                            "model": model_name,
-                            "level": 2,
-                            "parent_question": question_id
-                        }
-                        result_objects.append(result_obj)
-                        
-                        # Print to console
-                        if followup_conf is not None:
-                            print(f"  └─ {followup_label}: {followup_answer} (conf: {followup_conf:.2f})")
-                        else:
-                            print(f"  └─ {followup_label}: {followup_answer}")
-    
+                        # Store answer
+                        if followup_answer is not None:
+                            answers_dict[followup_label] = {
+                                'answer': followup_answer,
+                                'confidence': followup_conf
+                            }
+                            
+                            result_obj = {
+                                "question_id": followup_id,
+                                "question": full_followup,
+                                "answer": followup_answer,
+                                "confidence": followup_conf,
+                                "model": model_name,
+                                "level": 2,
+                                "parent_question": question_id
+                            }
+                            result_objects.append(result_obj)
+                            
+                            # Print to console
+                            if followup_conf is not None:
+                                print(f"  └─ {followup_label}: {followup_answer} (conf: {followup_conf:.2f})")
+                            else:
+                                print(f"  └─ {followup_label}: {followup_answer}")
+        
     if followup_count == 0:
         print("No follow-up questions triggered (all Level 2 answers were negative)")
     else:
@@ -346,7 +348,7 @@ if __name__ == "__main__":
                     # "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
                     #"Africa": ["Kampala", "Lusaka", "Marrakesh"]
                     }
-    models = ["qwen-vl"]
+    models = ["vilt"]
     continent_city = {
                     "Asia": ["Bombai"]
                     }
