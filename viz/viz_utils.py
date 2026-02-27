@@ -352,7 +352,7 @@ def generate_event_map(gps_csv_path,
 if __name__ == "__main__":
     
     CONTINENT = "America"
-    CITY = "BuenosAires"
+    CITY = "Chihuahua"
     MODEL = "qwen-vl"
 
     gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"
