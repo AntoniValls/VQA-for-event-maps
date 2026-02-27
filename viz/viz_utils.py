@@ -156,7 +156,13 @@ def get_color_from_normalized(score):
     if score < 0.7: return '#e67e22'      # Orange
     return '#e74c3c'                     # Red
 
-def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image_dir, prompt_json_path="../inout/vqa_prompts.json", show=True):
+def generate_event_map(gps_csv_path, 
+                       answers_jsonl_path, 
+                       output_html_path, 
+                       image_dir, 
+                       prompt_json_path="../inout/vqa_prompts.json", 
+                       show=True, 
+                       use_gt=False):
     # 1. Load Config
     primary_ids = []
     question_full_text, question_to_category, category_names = {}, {}, {}
@@ -172,10 +178,22 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
 
     # 2. Load Data
     gps_df_raw = pd.read_csv(gps_csv_path).sort_values(by='filename')
-    with open(answers_jsonl_path, 'r') as f:
+
+    # Decide which file to load: GT or model answers
+    if use_gt:
+        gt_path = os.path.join(Path(answers_jsonl_path).parents[2], "ground_truth_labels.jsonl")
+        if not os.path.exists(gt_path):
+            raise FileNotFoundError(f"Ground truth file not found at: {gt_path}")
+        load_path = gt_path
+        map_title = "Ground Truth"
+    else:
+        load_path = answers_jsonl_path
+        map_title = Path(answers_jsonl_path).parents[0].name  # model name
+
+    with open(load_path, 'r') as f:
         answers_data = [json.loads(line) for line in f]
     
-    # Organize answers by image
+    # Organize answers by image — same logic works for both GT and model outputs
     answers_by_image = {}
     for ans in answers_data:
         img_name = ans['image_name']
@@ -208,7 +226,16 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
     # 4. Initialize Map
     m = folium.Map(location=[center_lat, center_lon], zoom_start=18, tiles='CartoDB positron')
 
-   # 5. Draw Road segments with Grey fallback
+    title_html = f'''
+    <div style="position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+    background: white; padding: 8px 16px; border-radius: 8px; font-size: 15px;
+    font-family: sans-serif; font-weight: bold; z-index: 9999;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.2);">
+    {map_title}
+    </div>'''
+    m.get_root().html.add_child(folium.Element(title_html))
+
+    # 5. Draw Road segments with Grey fallback
     for u, v, k, edge_data in G.edges(keys=True, data=True):
         eid_str = str((u, v, k))
         
@@ -262,7 +289,6 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
         cat_tables = {}
         for q_id, ans in img_questions.items():
             cid = question_to_category.get(q_id, 'Other')
-            print(f"{q_id}, {cid}")
             if cid not in cat_tables: cat_tables[cid] = []
             val = ans.get('answer', 'N/A')
             color = 'red' if 'yes' in val.lower() else 'green' if 'no' in val.lower() else 'black'
@@ -325,12 +351,18 @@ def generate_event_map(gps_csv_path, answers_jsonl_path, output_html_path, image
 
 if __name__ == "__main__":
     
-    CONTINENT = "Asia"
-    CITY = "Bombai"
+    CONTINENT = "America"
+    CITY = "BuenosAires"
     MODEL = "qwen-vl"
 
     gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"
     answers_path =  os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/answers.jsonl")
-    map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interactive_map.html")
     image_dir = os.path.join(Path(gps_csv_path).parent, "images_selected")
-    generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=False)
+
+    # Model map
+    #map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interactive_map.html")
+    #generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True, use_gt=False)
+
+    # GT map — saved alongside model results for easy comparison
+    gt_map_output_path = os.path.join(Path(gps_csv_path).parent, f"interactive_map_gt.html")
+    generate_event_map(gps_csv_path, answers_path, gt_map_output_path, image_dir, show=True, use_gt=True)
