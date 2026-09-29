@@ -29,7 +29,7 @@ class MetricsEvaluator:
         self.ground_truth = []
         # Map IDs to weights for risk calculation
         self.weight_lookup = {qid: cfg["weight"] for cfg in self.HAZARD_CONFIG.values() for qid in cfg["ids"]}
-
+        
     def load_data(self) -> Tuple[List[Dict], List[Dict]]:
         def parse_mixed_json(path):
             data = []
@@ -44,8 +44,16 @@ class MetricsEvaluator:
 
         self.predictions = parse_mixed_json(self.predictions_path)
         self.ground_truth = parse_mixed_json(self.ground_truth_path)
+        with open("../inout/vqa_prompts.json", 'r') as f:
+            self.vqa_prompts = json.load(f)
         return self.predictions, self.ground_truth
 
+    def _get_key_for_item(self, d, item): 
+                for key, values in d.items():
+                    if item in values:
+                        return key
+                return item
+    
     def calculate_risk_score(self, questions_dict: Dict) -> float:
         """Calculates a normalized risk score [0, 1] for a set of answers for one image."""
         primary_ids = list(self.weight_lookup.keys())
@@ -163,11 +171,16 @@ class MetricsEvaluator:
             question_groups[q_id]['y_pred'].append(pair['pred_answer'])
             
             # Topic Grouping 
+            # Load question dependencies_map
+            qd_map = self.vqa_prompts["question_dependencies_map"]["structure"]
+            
             # Use parent_question if it exists (Lv 2/3), otherwise use question_id (Lv 1)
             topic = pair['ground_truth'].get('parent_question')
             if not topic:
                 topic = pair['question_id']
-            
+            else:
+                topic = self._get_key_for_item(qd_map["level_1_triggers"], topic)
+
             topic_groups.setdefault(topic, {'y_true': [], 'y_pred': []})
             topic_groups[topic]['y_true'].append(pair['gt_answer'])
             topic_groups[topic]['y_pred'].append(pair['pred_answer'])

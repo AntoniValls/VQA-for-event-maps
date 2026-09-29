@@ -352,7 +352,7 @@ def generate_event_map(gps_csv_path,
 if __name__ == "__main__":
     
     CONTINENT = "America"
-    CITY = "Chihuahua"
+    CITY = "NewYork"
     MODEL = "qwen-vl"
 
     gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"
@@ -360,8 +360,8 @@ if __name__ == "__main__":
     image_dir = os.path.join(Path(gps_csv_path).parent, "images_selected")
 
     # Model map
-    #map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interactive_map.html")
-    #generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True, use_gt=False)
+    map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interactive_map.html")
+    generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True, use_gt=False)
 
     # GT map — saved alongside model results for easy comparison
     gt_map_output_path = os.path.join(Path(gps_csv_path).parent, f"interactive_map_gt.html")

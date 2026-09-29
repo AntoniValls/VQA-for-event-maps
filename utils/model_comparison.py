@@ -49,8 +49,7 @@ def collect_results(base_dir):
             overall_records.append(row)
 
         # 2. Process Topic Metrics 
-        # Note: In your CSV, Topic Risk_MAE is 0.0 because risk is an image-level metric,
-        # but we keep the logic consistent for future updates.
+        # Topic Risk_MAE is 0.0 because risk is an image-level metric,
         topics = df[df["Category"] == "Topic"].copy()
         for _, t_row in topics.iterrows():
             t_dict = t_row.to_dict()

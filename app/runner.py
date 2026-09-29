@@ -339,20 +339,17 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
 if __name__ == "__main__":
 
     # ============ CONFIGURATION ============
-    models = ["llava", "instructblip", "qwen-vl", "vilt"]
+    models = ["qwen-vl", "llava", "instructblip", "vilt"]
     continent_city = {
-                    # "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia"],
-                    # "Europe": [
-                    #      "London1", "Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08",
-                    #      "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
-                    # "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    #"Africa": ["Kampala", "Lusaka", "Marrakesh"]
+                    "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
+                    "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia", "LaHabana", "Chihuahua"],
+                    "Europe": [
+                         "London1", "Oslo", "Munich", "Soller", "00", "01", "02", "03", "04", "05", "06", "07", "08",
+                         "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
+                    "Africa": ["Kampala", "Lusaka", "Marrakesh", "Acra"],
+                    "Oceania": ["Sidney", "Wellington"]
                     }
-    models = ["vilt"]
-    continent_city = {
-                    "Asia": ["Bombai"]
-                    }
-   
+    
     errors = []
     try:
         for continent, cities in continent_city.items():
@@ -374,7 +371,7 @@ if __name__ == "__main__":
 
                     image_dir = f"../data/{CONTINENT}/{CITY}"
                     
-                    fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=True, evaluate=True)
+                    fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=False, evaluate=True)
 
     except Exception as e:
         track = f"ERROR: --- {MODEL} | {CITY}: {e}"
