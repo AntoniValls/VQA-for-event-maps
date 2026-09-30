@@ -10,6 +10,8 @@ The system asks a Vision-Language Model (VLM) a **three-level hierarchy of yes/n
 
 Four VQA models are benchmarked against a manually annotated dataset of **20 cities, 41 sequences, 820 images and 18,352 answered questions**.
 
+> **New here to help extend the dataset?** Start with the onboarding slides, [`docs/extending-the-dataset_slides.pdf`](docs/extending-the-dataset_slides.pdf) (the paper in 15 minutes, then your task), and follow [§5](#5-adding-a-new-mapillary-sequence-step-by-step) step by step.
+
 ---
 
 ## Table of contents
@@ -56,6 +58,8 @@ VQA-for-event-maps/
 ├── common/
 │   ├── paths.py               # Where things are: repo root, data folder, prompts, .env settings
 │   └── utils.py               # Progress bar
+├── docs/
+│   └── extending-the-dataset_slides.pdf   # Onboarding slides: the paper + how to extend the dataset
 ├── data/                      # The dataset. NOT in git, see §3
 ├── .env.example               # Template for your settings -> copy to .env
 └── requirements.txt
@@ -319,7 +323,7 @@ Steps (1), (2) and (4)–(6) need no GPU. Only step (3) needs the models.
 
 ## 5. Adding a new Mapillary sequence (step-by-step)
 
-This is the main task for extending the dataset. Budget ~15 min for the download and ~45–60 min for labeling 20 images.
+This is the main task for extending the dataset. Budget ~15 min for the download and ~45–60 min for labeling 20 images. For the context (why these labels matter and which hazards we need most), see the [onboarding slides](docs/extending-the-dataset_slides.pdf).
 
 ### 5.1 Choose a good sequence
 
