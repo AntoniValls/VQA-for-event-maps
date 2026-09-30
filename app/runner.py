@@ -4,6 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import argparse
 import os
 import json
 
@@ -12,6 +13,7 @@ from PIL import Image
 import torch
 from inout.utils import progress_bar
 
+from core.paths import MODELS, list_sequences, record_path, sequence_dir
 from core.promptManager import PromptManager
 from core.vqaModel import VQAModel
 from core.eval import evaluate_model_performance
@@ -200,7 +202,7 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
                                 "answer": followup_answer,
                                 "confidence": followup_conf,
                                 "model": model_name,
-                                "level": 2,
+                                "level": 3,
                                 "parent_question": question_id
                             }
                             result_objects.append(result_obj)
@@ -217,6 +219,18 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
         print(f"\nProcessed {followup_count} follow-up questions")
     
     return answers_dict, result_objects
+
+_loaded_model = {}
+
+def get_model(model_name, device, dtype):
+    """Load a model once and reuse it for all sequences (keeps only one model in memory)."""
+    if _loaded_model.get("name") != model_name:
+        _loaded_model.clear()
+        if device == "cuda":
+            torch.cuda.empty_cache()
+        _loaded_model["name"] = model_name
+        _loaded_model["model"] = VQAModel(model_name, device=device, dtype=dtype)
+    return _loaded_model["model"]
 
 def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_map=False, evaluate=False):
     """Main processing function for images from directory."""
@@ -249,7 +263,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
     
     print(f"Found {len(image_files)} images in {image_dir}")
 
-    frame_stride = int(len(image_files)/num_keyframes)
+    frame_stride = max(1, len(image_files) // num_keyframes)
     
     # Load prompts
     prompt_manager = PromptManager(preset=prompt_preset)
@@ -258,7 +272,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
         prompt_manager.print_hierarchy_info()
     
     # Initialize model
-    vqa_model = VQAModel(model_name, device=device, dtype=base_dtype)
+    vqa_model = get_model(model_name, device, base_dtype)
     
     # # Create window
     # if not generate_map:
@@ -290,7 +304,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
                     
                     # Write results to file
                     for result_obj in result_objects:
-                        result_obj["image_path"] = str(image_path)
+                        result_obj["image_path"] = record_path(image_path)
                         result_obj["image_name"] = image_path.name
                         result_obj["image_index"] = idx
                         ans_f.write(json.dumps(result_obj) + "\n")
@@ -329,7 +343,7 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
             print(f"Error generating map: {e}")
     
     # Evaluate with the GT if requested
-    if eval:
+    if evaluate:
         gt_path = os.path.join(input_dir, "ground_truth_labels.jsonl")
         evaluate_model_performance(answers_path, gt_path)
     
@@ -337,47 +351,42 @@ def fromImages(input_dir, model_name, prompt_preset, num_keyframes=20, generate_
 
 
 if __name__ == "__main__":
+    # Runs the VQA models over the annotated sequences found in the data folder.
+    #   python app/runner.py                                          -> all sequences, all models
+    #   python app/runner.py --models qwen-vl --continent Asia --city Tokio1
+    parser = argparse.ArgumentParser(description="Run the hierarchical VQA models over the dataset")
+    parser.add_argument("--models", nargs="+", default=MODELS, help=f"Models to run (default: {' '.join(MODELS)})")
+    parser.add_argument("--continent", help="Only this continent (default: all)")
+    parser.add_argument("--city", help="Only this sequence folder (default: all)")
+    parser.add_argument("--preset", default="full_hierarchical", help="Question preset (default: full_hierarchical)")
+    parser.add_argument("--num-keyframes", type=int, default=20)
+    parser.add_argument("--map", action="store_true", help="Also generate the interactive risk event map")
+    parser.add_argument("--no-eval", action="store_true", help="Skip the evaluation against the GT")
+    args = parser.parse_args()
 
-    # ============ CONFIGURATION ============
-    models = ["qwen-vl", "llava", "instructblip", "vilt"]
-    continent_city = {
-                    "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia", "LaHabana", "Chihuahua"],
-                    "Europe": [
-                         "London1", "Oslo", "Munich", "Soller", "00", "01", "02", "03", "04", "05", "06", "07", "08",
-                         "09","10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
-                    "Africa": ["Kampala", "Lusaka", "Marrakesh", "Acra"],
-                    "Oceania": ["Sidney", "Wellington"]
-                    }
-    
+    sequences = list_sequences(args.continent, args.city)
+    if not sequences:
+        sys.exit("No annotated sequences found (need data/<Continent>/<City>/ground_truth_labels.jsonl)")
+
     errors = []
-    try:
-        for continent, cities in continent_city.items():
-            for city in cities:
-                for model in models:
-                    MODEL = model  # Options: vilt, blip2, blip2-large, llava, instructblip
-                    PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
-                    CONTINENT = continent
-                    CITY = city  # Use the current city in the list
-                    # =======================================
-                    
-                    print(f"="*70)
-                    print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
-                    print(f"="*70)
-                    print(f"Model: {MODEL}")
-                    print(f"Preset: {PROMPT_PRESET}")
-                    print(f"City: {CITY}, {CONTINENT}")
-                    print(f"="*70)
+    for model in args.models:
+        for continent, city in sequences:
+            print(f"="*70)
+            print(f"VQA Pedestrian Navigation System - Hierarchical Mode")
+            print(f"="*70)
+            print(f"Model: {model}")
+            print(f"Preset: {args.preset}")
+            print(f"City: {city}, {continent}")
+            print(f"="*70)
 
-                    image_dir = f"../data/{CONTINENT}/{CITY}"
-                    
-                    fromImages(image_dir, MODEL, PROMPT_PRESET, num_keyframes=20, generate_map=False, evaluate=True)
-
-    except Exception as e:
-        track = f"ERROR: --- {MODEL} | {CITY}: {e}"
-        errors.append(track)
+            try:
+                fromImages(str(sequence_dir(continent, city)), model, args.preset,
+                           num_keyframes=args.num_keyframes, generate_map=args.map, evaluate=not args.no_eval)
+            except Exception as e:
+                errors.append(f"ERROR: --- {model} | {continent}/{city}: {e}")
+                print(errors[-1])
 
     if errors:
-        print("\nThis are the errors we got:")
+        print("\nThese are the errors we got:")
         for error in errors:
-            print(error, sep="\n")
+            print(error)

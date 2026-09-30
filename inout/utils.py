@@ -11,13 +11,16 @@ def progress_bar(pct, width=30):
     sys.stdout.flush()
 
 def create_run_dir(
-    base: str = "../data/recordings",
+    base: str = None,
 ) -> str:
     """
     Create a unique, time-based run directory under `base`.
 
     Directory name encodes end point and enabled flags.
     """
+    if base is None:
+        from core.paths import DATA_DIR
+        base = str(DATA_DIR / "recordings")
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     name = f"{ts}"

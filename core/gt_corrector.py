@@ -1,20 +1,34 @@
+"""
+Web tool to review the ground truth where most models disagree with the annotator.
+
+    python core/gt_corrector.py --continent Africa --city Lusaka     # then open http://localhost:5000
+"""
+import argparse
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, render_template_string, request, jsonify, send_from_directory
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.paths import MODELS, sequence_dir
+
 app = Flask(__name__)
 
-# --- CONFIGURATION ---
-BASE_PATH = Path("../data/Africa/Lusaka/")  # left: Oceania + Chihuahua
-GT_PATH = BASE_PATH / "ground_truth_labels.jsonl"
-IMG_DIR = BASE_PATH / "images_selected"
-MODELS = ["llava", "instructblip", "qwen-vl", "vilt"]
+# --- CONFIGURATION (set from the command line in __main__) ---
+BASE_PATH = None
+GT_PATH = None
+IMG_DIR = None
+MIN_DISAGREEING_MODELS = 3
 
 # Global storage for the session
 gt_data = []
+MODEL_ANSWERS = {}
 
 def load_data():
     global gt_data
@@ -30,8 +44,6 @@ def load_data():
         model_results[m] = [json.loads(l) for l in content.splitlines() if l.strip()]
     
     return model_results
-
-MODEL_ANSWERS = load_data()
 
 # --- HTML TEMPLATE ---
 HTML_TEMPLATE = """
@@ -226,7 +238,7 @@ def index():
                     disagreement_count += 1
         
         # Suggestion: Require at least 3 models to disagree before flagging for review
-        if disagreement_count >= 3:
+        if disagreement_count >= MIN_DISAGREEING_MODELS:
             review_indices.append(i)
             
     return render_template_string(
@@ -260,4 +272,18 @@ def update():
     return jsonify(success=True)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    parser = argparse.ArgumentParser(description="Review GT answers where most models disagree")
+    parser.add_argument("--continent", required=True)
+    parser.add_argument("--city", required=True)
+    parser.add_argument("--min-disagree", type=int, default=3,
+                        help="Flag a GT answer when at least this many models disagree (default: 3 of 4)")
+    parser.add_argument("--port", type=int, default=5000)
+    args = parser.parse_args()
+
+    BASE_PATH = sequence_dir(args.continent, args.city)
+    GT_PATH = BASE_PATH / "ground_truth_labels.jsonl"
+    IMG_DIR = BASE_PATH / "images_selected"
+    MIN_DISAGREEING_MODELS = args.min_disagree
+    MODEL_ANSWERS = load_data()
+    print(f"Reviewing {GT_PATH}  ->  http://localhost:{args.port}")
+    app.run(debug=False, port=args.port)

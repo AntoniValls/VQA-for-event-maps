@@ -1,11 +1,13 @@
 import json
 from typing import Dict, List, Optional
 
+from core.paths import PROMPTS_PATH
+
 
 class PromptManager:
     """Manages hierarchical VQA prompts from JSON configuration file."""
-    
-    def __init__(self, json_path: str = "../inout/vqa_prompts.json", preset: str = "level_1_only"):
+
+    def __init__(self, json_path: str = PROMPTS_PATH, preset: str = "level_1_only"):
         """
         Initialize PromptManager.
         
@@ -130,6 +132,24 @@ class PromptManager:
     def get_question_by_id(self, question_id: str) -> Optional[Dict]:
         """Get a specific question by its ID."""
         return self.all_prompts.get(question_id)
+
+    def get_level1_ancestor(self, question_id: str) -> str:
+        """Follow the dependency chain up to the Level-1 question (the hazard category)."""
+        seen = set()
+        while question_id in self.all_prompts and 'dependency' in self.all_prompts[question_id]:
+            if question_id in seen:
+                break
+            seen.add(question_id)
+            question_id = self.all_prompts[question_id]['dependency']
+        return question_id
+
+    def get_level(self, question_id: str) -> int:
+        """1 for primary questions, 2 for their follow-ups, 3 for follow-ups of follow-ups."""
+        level = 1
+        while question_id in self.all_prompts and 'dependency' in self.all_prompts[question_id] and level < 10:
+            question_id = self.all_prompts[question_id]['dependency']
+            level += 1
+        return level
     
     def print_hierarchy_info(self):
         """Print information about the hierarchical structure."""

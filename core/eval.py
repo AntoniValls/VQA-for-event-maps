@@ -3,13 +3,22 @@ Metrics evaluation module for VQA Pedestrian Navigation System
 Calculates F1, Accuracy, Specificity, and Recall for binary classification tasks
 """
 
+import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 import pandas as pd
 from datetime import datetime
 import string
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.paths import MODELS, list_sequences, sequence_dir
+from core.promptManager import PromptManager
 
 class MetricsEvaluator:
     """Evaluates VQA model predictions against ground truth labels including Risk Score Error."""
@@ -44,15 +53,8 @@ class MetricsEvaluator:
 
         self.predictions = parse_mixed_json(self.predictions_path)
         self.ground_truth = parse_mixed_json(self.ground_truth_path)
-        with open("../inout/vqa_prompts.json", 'r') as f:
-            self.vqa_prompts = json.load(f)
+        self.prompt_manager = PromptManager(preset="full_hierarchical")
         return self.predictions, self.ground_truth
-
-    def _get_key_for_item(self, d, item): 
-                for key, values in d.items():
-                    if item in values:
-                        return key
-                return item
     
     def calculate_risk_score(self, questions_dict: Dict) -> float:
         """Calculates a normalized risk score [0, 1] for a set of answers for one image."""
@@ -131,7 +133,8 @@ class MetricsEvaluator:
                             'question_id': q_id,
                             'pred_answer': pred_data.get('answer'),
                             'gt_answer': img_gt_map[img_name][q_id].get('answer'),
-                            'level': pred_data.get('level', 1),
+                            # Level from the question hierarchy (GT and older model outputs may mislabel Level 3 as 2)
+                            'level': self.prompt_manager.get_level(q_id),
                             'ground_truth': img_gt_map[img_name][q_id]
                         })
 
@@ -170,16 +173,8 @@ class MetricsEvaluator:
             question_groups[q_id]['y_true'].append(pair['gt_answer'])
             question_groups[q_id]['y_pred'].append(pair['pred_answer'])
             
-            # Topic Grouping 
-            # Load question dependencies_map
-            qd_map = self.vqa_prompts["question_dependencies_map"]["structure"]
-            
-            # Use parent_question if it exists (Lv 2/3), otherwise use question_id (Lv 1)
-            topic = pair['ground_truth'].get('parent_question')
-            if not topic:
-                topic = pair['question_id']
-            else:
-                topic = self._get_key_for_item(qd_map["level_1_triggers"], topic)
+            # Topic Grouping: the Level-1 question (hazard category) the question descends from
+            topic = self.prompt_manager.get_level1_ancestor(pair['question_id'])
 
             topic_groups.setdefault(topic, {'y_true': [], 'y_pred': []})
             topic_groups[topic]['y_true'].append(pair['gt_answer'])
@@ -399,25 +394,21 @@ def save_summary_csv(results: Dict, csv_path: str):
 
 
 if __name__ == "__main__":
-    # Example usage
-    models = ["llava", "instructblip", "qwen-vl", "vilt"]
-    continent_city = {
-                    "America": ["BuenosAires", "NewYork", "SanFrancisco", "Ushuaia", "Chihuahua", "LaHabana"],
-                    "Europe": ["London1", "Munich", "Soller","Oslo", "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "14", "15", "16", "17", "19", "20", "21", "22"],
-                    "Asia": ["Bombai", "Singapore", "Tokio1", "Tokio2"],
-                    "Africa": ["Kampala", "Lusaka","Marrakesh", "Acra"],
-                    "Oceania": ["Sidney", "Wellington"]
-                    }
-    
-    for continent, cities in continent_city.items():
-        for city in cities:
-            for model in models:
-                MODEL = model  # Options: vilt, blip2, blip2-large, llava, instructblip
-                PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, crossing, stairs, construction, obstacle, crowding, vehicle, surface, visibility, full_hierarchical
-                CONTINENT = continent
-                CITY = city  # Use the current city in the list
+    # Re-evaluates existing model answers against the GT (no model is run).
+    #   python core/eval.py                                  -> all sequences, all models
+    #   python core/eval.py --continent Asia --city Tokio1 --models qwen-vl
+    parser = argparse.ArgumentParser(description="Evaluate model answers against the ground truth")
+    parser.add_argument("--continent", help="Only this continent (default: all)")
+    parser.add_argument("--city", help="Only this sequence folder (default: all)")
+    parser.add_argument("--models", nargs="+", default=MODELS, help=f"Models to evaluate (default: {' '.join(MODELS)})")
+    args = parser.parse_args()
 
-                predictions_path = f"../data/{CONTINENT}/{CITY}/results/{MODEL}/answers.jsonl"
-                ground_truth_path = f"../data/{CONTINENT}/{CITY}/ground_truth_labels.jsonl"
-                
-                evaluate_model_performance(predictions_path, ground_truth_path)
+    for continent, city in list_sequences(args.continent, args.city):
+        for model in args.models:
+            seq_dir = sequence_dir(continent, city)
+            predictions_path = seq_dir / "results" / model / "answers.jsonl"
+            if not predictions_path.exists():
+                print(f"Skipping {continent}/{city} [{model}]: no answers.jsonl")
+                continue
+            print(f"\n### {continent}/{city} [{model}]")
+            evaluate_model_performance(str(predictions_path), str(seq_dir / "ground_truth_labels.jsonl"))

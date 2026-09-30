@@ -3,6 +3,9 @@ __pycache__/
 viz/generate_paper_figures.py
 cache/
 
+# Dataset: never in git. It is distributed as a .tar.gz (see README, "The dataset")
+data/
+
 # Credentials (keep .env.example as the template)
 .env
 .env.*
@@ -11,7 +14,7 @@ cache/
 *secret*
 *token*
 
-# Heavy data: images, recordings, GPS/metadata, generated maps
+# Heavy files, in case they end up outside data/
 *.jpg
 *.jpeg
 *.png
@@ -21,7 +24,7 @@ cache/
 *.json
 !inout/*.json
 
-# Archives (data is shared outside git)
+# Archives
 *.tar.gz
 *.tgz
 *.zip

@@ -1,5 +1,7 @@
 from pathlib import Path
+import argparse
 import string
+import sys
 import cv2
 import json
 from PIL import Image
@@ -12,8 +14,14 @@ from io import BytesIO
 import webbrowser
 import os
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.paths import DATA_DIR, PROMPTS_PATH, sequence_dir
+
 # --- headless-safe preview helper ---
-def save_preview(img, out_path="../data/preview.png"):
+def save_preview(img, out_path=DATA_DIR / "preview.png"):
     import matplotlib
     matplotlib.use("Agg")  # no GUI needed
     import matplotlib.pyplot as plt
@@ -160,7 +168,7 @@ def generate_event_map(gps_csv_path,
                        answers_jsonl_path, 
                        output_html_path, 
                        image_dir, 
-                       prompt_json_path="../inout/vqa_prompts.json", 
+                       prompt_json_path=PROMPTS_PATH, 
                        show=True, 
                        use_gt=False):
     # 1. Load Config
@@ -350,19 +358,23 @@ def generate_event_map(gps_csv_path,
 
 
 if __name__ == "__main__":
-    
-    CONTINENT = "America"
-    CITY = "NewYork"
-    MODEL = "qwen-vl"
+    #   python viz/viz_utils.py --continent America --city NewYork --model qwen-vl
+    parser = argparse.ArgumentParser(description="Generate the interactive risk event maps (model + GT)")
+    parser.add_argument("--continent", required=True)
+    parser.add_argument("--city", required=True)
+    parser.add_argument("--model", default="qwen-vl")
+    parser.add_argument("--no-show", action="store_true", help="Don't open the maps in the browser")
+    args = parser.parse_args()
 
-    gps_csv_path = f"../data/{CONTINENT}/{CITY}/gps_positions.csv"
-    answers_path =  os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/answers.jsonl")
-    image_dir = os.path.join(Path(gps_csv_path).parent, "images_selected")
+    seq_dir = sequence_dir(args.continent, args.city)
+    gps_csv_path = str(seq_dir / "gps_positions.csv")
+    answers_path = str(seq_dir / "results" / args.model / "answers.jsonl")
+    image_dir = str(seq_dir / "images_selected")
 
     # Model map
-    map_output_path = os.path.join(Path(gps_csv_path).parent, f"results/{MODEL}/interactive_map.html")
-    generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=True, use_gt=False)
+    map_output_path = str(seq_dir / "results" / args.model / "interactive_map.html")
+    generate_event_map(gps_csv_path, answers_path, map_output_path, image_dir, show=not args.no_show, use_gt=False)
 
-    # GT map — saved alongside model results for easy comparison
-    gt_map_output_path = os.path.join(Path(gps_csv_path).parent, f"interactive_map_gt.html")
-    generate_event_map(gps_csv_path, answers_path, gt_map_output_path, image_dir, show=True, use_gt=True)
+    # GT map — saved in the sequence folder for easy comparison
+    gt_map_output_path = str(seq_dir / "interactive_map_gt.html")
+    generate_event_map(gps_csv_path, answers_path, gt_map_output_path, image_dir, show=not args.no_show, use_gt=True)

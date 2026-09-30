@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import argparse
 import numpy as np
 import os
 import json
@@ -17,9 +18,8 @@ from PIL import Image
 from datetime import datetime
 import shutil
 
+from core.paths import record_path, sequence_dir
 from core.promptManager import PromptManager
-
-import shutil
 
 def select_keyframes_interactively_strided(
     image_files,
@@ -167,29 +167,6 @@ def display_image_with_text(image, text, window_name="Ground Truth Labeling"):
     cv2.imshow(window_name, canvas)
 
 
-def load_existing_labels(output_path):
-    """
-    Load existing labels from file.
-    
-    Returns:
-        set: Set of image names that have been labeled
-    """
-    labeled_images = set()
-    
-    if os.path.exists(output_path):
-        try:
-            with open(output_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    try:
-                        label = json.loads(line.strip())
-                        labeled_images.add(label.get('image_name'))
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            print(f"Warning: Error reading existing labels: {e}")
-    
-    return 
-    
 def load_existing_labels_by_image_and_question(output_path):
     """
     Returns:
@@ -271,10 +248,6 @@ def create_ground_truth_labels(
     # ------------------------------------------------------------------
     # Load existing labels
     # ------------------------------------------------------------------
-    existing_labels = load_existing_labels_by_image_and_question(output_path)
-    if os.path.exists(output_path) and not override_existing:
-        existing_labels = load_existing_labels_by_image_and_question(output_path)
-
     # ------------------------------------------------------------------
     # Prepare output file
     # ------------------------------------------------------------------
@@ -291,8 +264,7 @@ def create_ground_truth_labels(
         print(f"Refining Ground Truth: Removing old entries for {patch_questions} and their follow-ups...")
         
         # Initialize PromptManager early to find children
-        prompt_json_path = "../inout/vqa_prompts.json"
-        temp_pm = PromptManager(str(prompt_json_path), preset=prompt_preset)
+        temp_pm = PromptManager(preset=prompt_preset)
         
         ids_to_remove = set(patch_questions)
         for pqid in patch_questions:
@@ -338,9 +310,20 @@ def create_ground_truth_labels(
     selected_dir = os.path.join(input_dir, "images_selected")
 
     # If no images in the folder trigger select_images=True
-    if not os.path.isdir(selected_dir) or sum(1 for p in Path(selected_dir).iterdir() if p.is_file()) != num_keyframes:
+    n_selected = sum(1 for p in Path(selected_dir).iterdir() if p.is_file()) if os.path.isdir(selected_dir) else 0
+    if n_selected != num_keyframes:
         select_images = True
-        print("Not enough selected images in the cache. Triggering selection")
+        print(f"Found {n_selected} images in images_selected (need {num_keyframes}). Triggering selection")
+
+    if select_images and n_selected > 0:
+        # Leftovers from a previous (incomplete) selection would mix with the new one
+        reply = input(f"images_selected/ already has {n_selected} images. Delete them and select again? [y/N] ")
+        if reply.strip().lower() != "y":
+            print("Aborted. Nothing was changed.")
+            return 1
+        for p in Path(selected_dir).iterdir():
+            if p.is_file():
+                p.unlink()
 
     print("\nSelecting strided keyframes interactively...")
     selected_images = select_keyframes_interactively_strided(
@@ -357,8 +340,7 @@ def create_ground_truth_labels(
     # ------------------------------------------------------------------
     # Load prompts
     # ------------------------------------------------------------------
-    prompt_json_path = "../inout/vqa_prompts.json"
-    prompt_manager = PromptManager(str(prompt_json_path), preset=prompt_preset)
+    prompt_manager = PromptManager(preset=prompt_preset)
     prompt_manager.print_hierarchy_info()
     
     # Instructions
@@ -403,21 +385,6 @@ def create_ground_truth_labels(
                 # Reset for new image
                 prompt_manager.reset_answer_history()
                 initial_prompts = prompt_manager.get_initial_prompts()
-
-                # Determine which questions to ask
-                if patch_questions is not None:
-                    # Ask only the questions in patch_questions
-                    # (Follow-ups are handled naturally inside the loop if answer is 'yes')
-                    initial_prompts = [
-                        q for q in initial_prompts if q["id"] in patch_questions
-                    ]
-                elif not override_existing:
-                    initial_prompts = [
-                        q for q in initial_prompts if q["id"] not in answered
-                    ]
-
-                if not initial_prompts:
-                    continue
 
                 image_labels = []
                 skip_image = False
@@ -479,7 +446,7 @@ def create_ground_truth_labels(
                             # Clone previous labels but update image-specific info
                             image_labels = copy.deepcopy(previous_image_labels)
                             for label in image_labels:
-                                label["image_path"] = str(image_path)
+                                label["image_path"] = record_path(image_path)
                                 label["image_name"] = image_path.name
                                 label["image_index"] = original_index
                                 label["timestamp"] = datetime.now().isoformat()
@@ -523,7 +490,7 @@ def create_ground_truth_labels(
                     
                     # Store label
                     label_obj = {
-                        "image_path": str(image_path),
+                        "image_path": record_path(image_path),
                         "image_name": image_path.name,
                         "image_index": original_index,
                         "question_id": question_id,
@@ -577,7 +544,7 @@ def create_ground_truth_labels(
                                 
                                 # Store follow-up label
                                 followup_label_obj = {
-                                    "image_path": str(image_path),
+                                    "image_path": record_path(image_path),
                                     "image_name": image_path.name,
                                     "image_index": original_index,
                                     "question_id": followup_id,
@@ -632,7 +599,7 @@ def create_ground_truth_labels(
                                             
                                             # Store follow-up label
                                             ffollowup_label_obj = {
-                                                "image_path": str(image_path),
+                                                "image_path": record_path(image_path),
                                                 "image_name": image_path.name,
                                                 "image_index": original_index,
                                                 "question_id": ffollowup_id,
@@ -678,36 +645,42 @@ def create_ground_truth_labels(
     return 0
 
 if __name__ == "__main__":
-    # ============ CONFIGURATION ============
-    PROMPT_PRESET = "full_hierarchical"  # Options: level_1_only, full_hierarchical, crossing, etc.
-    CONTINENT = "Oceania"
-    CITY = "Sidney"
-    NUM_KEYFRAMES = 20  # Number of images to label
-    OVERRIDE_EXISTING = False  # Set to True to re-label already labeled images
-    SELECT_IMAGES = False
-    PATCH_QUESTIONS = None
+    #   python core/gt_maker.py --continent Asia --city Hanoi
+    #   python core/gt_maker.py --continent Asia --city Hanoi --patch q_stairs_visible q_surface_hazardous
+    #
+    #   --override   --patch     Behavior
+    #   no           no          Normal incremental labeling (resumes where you left it)
+    #   no           yes         Erases those questions (+ follow-ups) and asks them again
+    #   yes          no          Full re-label of all questions (overwrites the GT file!)
+    #   yes          yes         Re-asks the patched questions even if already answered
+    parser = argparse.ArgumentParser(description="Keyframe selection + manual ground-truth labeling")
+    parser.add_argument("--continent", required=True, help="Africa, America, Asia, Europe or Oceania")
+    parser.add_argument("--city", required=True, help="Sequence folder name, e.g. NewYork")
+    parser.add_argument("--num-keyframes", type=int, default=20, help="Images to label (default: 20)")
+    parser.add_argument("--preset", default="full_hierarchical", help="Question preset (default: full_hierarchical)")
+    parser.add_argument("--select", action="store_true", help="Force a new keyframe selection")
+    parser.add_argument("--override", action="store_true", help="Re-label already labeled questions (see table above)")
+    parser.add_argument("--patch", nargs="+", metavar="QUESTION_ID", help="Only (re)ask these Level-1 question IDs")
+    args = parser.parse_args()
 
-    """
-     override_existing	patch_questions	    Behavior
-        False	               None	        Normal incremental labeling
-        False	               set(...)	    Erases those questions and asks them again
-        True	               None	        Full re-label all questions
-        True	               set(...)	    Delete all GT and ask the patched"""
+    input_directory = sequence_dir(args.continent, args.city)
+    if not (input_directory / "images").is_dir():
+        sys.exit(f"No images/ folder in {input_directory}. Download the sequence first.")
 
+    if args.override and not args.patch:
+        reply = input("--override without --patch will OVERWRITE the whole GT file. Continue? [y/N] ")
+        if reply.strip().lower() != "y":
+            sys.exit(0)
 
-    # =======================================
-    
     print(f"="*70)
     print(f"Ground Truth Labeling Tool - Hierarchical VQA")
     print(f"="*70)
-    print(f"Preset: {PROMPT_PRESET}")
-    print(f"City: {CITY}, {CONTINENT}")
-    print(f"Target labels: ~{NUM_KEYFRAMES} images")
+    print(f"Preset: {args.preset}")
+    print(f"City: {args.city}, {args.continent}")
+    print(f"Target labels: ~{args.num_keyframes} images")
     print(f"="*70)
-    
-    input_directory = f"../data/{CONTINENT}/{CITY}"
-    
-    exit_code = create_ground_truth_labels(input_directory, PROMPT_PRESET, NUM_KEYFRAMES, OVERRIDE_EXISTING, SELECT_IMAGES, PATCH_QUESTIONS)
-    sys.exit(exit_code)
 
-    # Rerun sittings question
+    exit_code = create_ground_truth_labels(
+        str(input_directory), args.preset, args.num_keyframes, args.override, args.select,
+        set(args.patch) if args.patch else None)
+    sys.exit(exit_code)

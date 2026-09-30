@@ -4,7 +4,13 @@ import cv2
 import json
 import numpy as np
 import pyzed.sl as sl
-import shutil
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.paths import DATA_DIR
 
 def progress_bar(percent_done, bar_length=50):
     #Display a progress bar
@@ -78,8 +84,8 @@ if __name__ == "__main__":
     print("Available sequences:", sequences)
     for seq in sequences:
         print(f"Processing sequence {seq}...")
-        input_svo_path = f"../data/Europe/Barcelona/svo/IRI_{seq}.svo2"
-        output_directory = f"../data/Europe/Barcelona/{seq}/images"  
+        input_svo_path = str(DATA_DIR / "Europe" / "Barcelona" / "svo" / f"IRI_{seq}.svo2")
+        output_directory = str(DATA_DIR / "Europe" / seq / "images")
         export_images(input_svo_path, output_directory, max_frames=100)
     
 

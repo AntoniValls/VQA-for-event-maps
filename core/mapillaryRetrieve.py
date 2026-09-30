@@ -1,4 +1,10 @@
-import os
+"""
+Downloads a Mapillary sequence into data/<Continent>/<City>/ (images/, metadata.json, gps_positions.csv).
+
+    python core/mapillaryRetrieve.py --continent Asia --city Hanoi --sequence <SEQUENCE_ID>
+"""
+import argparse
+import sys
 import requests
 import json
 from pathlib import Path
@@ -7,6 +13,12 @@ import time
 from PIL import Image
 from io import BytesIO
 import math
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.paths import CONTINENTS, get_setting, sequence_dir
 
 def extract_front_view(image_bytes, compass_angle=0, fov=90):
     """
@@ -74,8 +86,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     response = requests.get(url)
 
     if response.status_code != 200:
-        print(f"Error fetching sequence: {response.status_code}")
-        exit(1)
+        raise RuntimeError(f"Error fetching sequence {seq}: HTTP {response.status_code} {response.text[:200]}")
 
     data = response.json()
     image_ids = [obj['id'] for obj in data['data']]
@@ -181,7 +192,7 @@ def mapillary_retrieve(mly_key, seq, output_folder):
 
     print(f"\nDownload complete!")
     print(f"Images saved to: {images_folder}")
-    print(f"GPS data saved to: {output_folder / 'gps_positions.json'}")
+    print(f"Metadata saved to: {output_folder / 'metadata.json'}")
     print(f"CSV saved to: {output_folder / 'gps_positions.csv'}")
 
     # Print summary
@@ -193,17 +204,8 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     return
 
 def load_mapillary_token():
-    """
-    Read the Mapillary token from the MAPILLARY_TOKEN environment variable,
-    or from the (git-ignored) .env file at the repository root.
-    """
-    token = os.environ.get("MAPILLARY_TOKEN")
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-    if not token and env_path.exists():
-        for line in env_path.read_text().splitlines():
-            key, _, value = line.partition("=")
-            if key.strip() == "MAPILLARY_TOKEN":
-                token = value.strip().strip('"').strip("'")
+    """Read MAPILLARY_TOKEN from the environment or from the (git-ignored) .env file."""
+    token = get_setting("MAPILLARY_TOKEN")
     if not token:
         raise RuntimeError(
             "MAPILLARY_TOKEN not found. Copy .env.example to .env and paste your "
@@ -212,19 +214,19 @@ def load_mapillary_token():
     return token
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Download a Mapillary sequence")
+    parser.add_argument("--continent", required=True, choices=CONTINENTS)
+    parser.add_argument("--city", required=True, help="Folder name, CamelCase without spaces (e.g. BuenosAires, Tokio2)")
+    parser.add_argument("--sequence", required=True, help="Mapillary sequence ID")
+    args = parser.parse_args()
 
-    # (continent, city folder name, Mapillary sequence ID)
-    todos = [
-        ("America", "NewYork", "5xBMc2sYv7nOLRUSoCrw8f")
-        ]
-
-    # Configuration
     mly_key = load_mapillary_token()
 
-    for continent, name, seq in todos:
-        output_folder = Path(f'../data/{continent}/{name}/')
+    output_folder = sequence_dir(args.continent, args.city)
+    if (output_folder / "images").is_dir() and any((output_folder / "images").iterdir()):
+        sys.exit(f"{output_folder}/images already exists and is not empty. Delete it or choose another --city.")
 
-        # Create output directories
-        output_folder.mkdir(parents=True, exist_ok=True)
+    # Create output directories
+    output_folder.mkdir(parents=True, exist_ok=True)
 
-        mapillary_retrieve(mly_key, seq, output_folder)
+    mapillary_retrieve(mly_key, args.sequence, output_folder)

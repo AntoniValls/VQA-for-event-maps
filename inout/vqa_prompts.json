@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "version": "3.0",
+    "version": "3.1",
     "description": "Hierarchical VQA Question System for Pedestrian Navigation",
     "base_context": "You are an expert at detecting pedestrian obstacles for people with low vision. Answer only with Yes or No.",
     "date_created": "2025-12-01",
-    "date_updated": "2025-12-01"
+    "date_updated": "2026-09-30"
   },
   "prompt_categories": {
     "level_1_primary": {
@@ -246,16 +246,6 @@
           "dependency": "q_construction_visible",
           "short_label": "Overhead Hazard",
           "enabled": true
-        },
-        {
-          "id": "q_construction_alternative_path",
-          "text": "Is an alternative path clearly marked?",
-          "topic": "Construction - Navigation",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_construction_pathway_detour",
-          "short_label": "Alternative Marked",
-          "enabled": true
         }
       ]
     },
@@ -493,16 +483,6 @@
         },
         {
           "id": "q_surface_cracks_holes",
-          "text": "Are there cracks or holes in the pavement?",
-          "topic": "Surface - Damage",
-          "type": "boolean",
-          "choices": ["Yes", "No"],
-          "dependency": "q_surface_hazardous",
-          "short_label": "Cracks/Holes",
-          "enabled": true
-        },
-        {
-          "id": "q_surface_cracks_holes",
           "text": "Is the pavement visibly damaged (large cracks, holes, or broken sections)?",
           "topic": "Surface - Damage",
           "type": "boolean",
@@ -556,7 +536,7 @@
       "description": "Level 1 + all stairs detail questions",
       "enabled_questions": [
         "q_stairs_visible",
-        "q_stairs_upward",
+        "q_stairs_heading",
         "q_stairs_handrail",
         "q_stairs_only_option"
       ]
@@ -568,9 +548,7 @@
         "q_construction_visible",
         "q_construction_barriers",
         "q_construction_equipment",
-        "q_construction_overhead",
-        "q_construction_pathway_detour",
-        "q_construction_alternative_path"
+        "q_construction_overhead"
       ]
     },
     "obstacle": {
@@ -593,9 +571,8 @@
       "description": "Level 1 + all crowding detail questions",
       "enabled_questions": [
         "q_pedestrians_present",
-        "q_crowding_more_than_five",
         "q_crowding_same_direction",
-        "q_crowding_path_reduced"
+        "q_crowding_slow_movement"
       ]
     },
     "vehicle": {
@@ -621,37 +598,13 @@
         "q_surface_hazardous",
         "q_surface_water_ice",
         "q_surface_sloped",
-        "q_surface_cracks_holes",
-        "q_surface_overhead_hazard"
+        "q_surface_cracks_holes"
       ]
     },
     "full_hierarchical": {
       "name": "Full Hierarchical Assessment",
       "description": "All questions - Level 1 triggers appropriate Level 2 questions",
       "enabled_questions": "all"
-    }
-  },
-  "question_dependencies_map": {
-    "description": "Visual map of question dependencies for reference",
-    "structure": {
-      "level_1_triggers": {
-        "q_pedestrian_not_on_sidewalk": ["q_pedestrian_on_road", "q_pedestrian_on_unpaved"],
-        "q_crossing_nearby": ["q_crossing_signal_present", "q_crossing_vehicles_present", "q_crossing_marked", "q_crossing_others_waiting"],
-        "q_stairs_visible": ["q_stairs_upward", "q_stairs_handrail", "q_stairs_only_option"],
-        "q_construction_visible": ["q_construction_barriers", "q_construction_equipment", "q_construction_overhead", "q_construction_pathway_detour"],
-        "q_obstacle_blocking": ["q_obstacle_upcoming_step", "q_obstacle_is_vehicle", "q_obstacle_movable_objects", "q_obstacle_fixed_infrastructure", "q_obstacle_blocks_half", "q_obstacle_space_around", "q_obstacle_overhead", "q_obstacle_seating"],
-        "q_pedestrians_present": ["q_crowding_more_than_five", "q_crowding_same_direction", "q_crowding_path_reduced"],
-        "q_vehicle_nearby": ["q_vehicle_is_bicycle", "q_vehicle_is_car_truck_bus", "q_vehicle_is_motorcycle"],
-        "q_surface_hazardous": ["q_surface_water_ice", "q_surface_sloped", "q_surface_cracks_holes", "q_surface_overhead_hazard"]
-      },
-      "level_2_triggers": {
-        "q_crossing_signal_present": ["q_crossing_signal_red_green"],
-        "q_crossing_vehicles_present": ["q_crossing_vehicles_moving"],
-        "q_construction_pathway_detour": ["q_construction_alternative_path"],
-        "q_vehicle_is_bicycle": ["q_bicycle_moving", "q_bicycle_bike_lane"],
-        "q_vehicle_is_car_truck_bus": ["q_motor_vehicle_moving", "q_motor_vehicle_blocking"],
-        "q_vehicle_is_motorcycle": ["q_motorcycle_sidewalk", "q_motorcycle_motorized", "q_motorcycle_moving"]
-      }
     }
   }
 }

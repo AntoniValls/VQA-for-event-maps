@@ -4,15 +4,22 @@ Compare VQA model metrics across result folders, including Topic and Risk Score 
 """
 
 import os
+import sys
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.paths import DATA_DIR
+
 # ================= CONFIG =================
-BASE_RESULTS_DIR = "../data"   
-OUTPUT_DIR = "../data/model_comparison"
+BASE_RESULTS_DIR = DATA_DIR
+OUTPUT_DIR = DATA_DIR / "model_comparison"
 # Added Risk_MAE to the main metrics list
 METRICS = ["Accuracy", "F1", "Precision", "Recall", "Specificity", "Risk_MAE"]
 # ==========================================
@@ -31,12 +38,10 @@ def collect_results(base_dir):
         root = csv_path.parent
         model_name = root.name
         
-        parts = root.parts
+        # <DATA_DIR>/<Continent>/<City>/results/<model>/metrics_summary.csv
         try:
-            data_idx = parts.index("data")
-            region = parts[data_idx + 1]
-            city = parts[data_idx + 2]
-        except (ValueError, IndexError):
+            region, city = root.relative_to(root_path).parts[:2]
+        except ValueError:
             region, city = "Unknown", "Unknown"
 
         df = pd.read_csv(csv_path)
