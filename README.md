@@ -153,7 +153,7 @@ data/
 ├── <Continent>/<Sequence>/
 │   ├── images/                     # all downloaded frames (0000_<mapillaryImageId>.jpg ...)
 │   ├── images_selected/            # the 20 keyframes chosen for annotation (copies)
-│   ├── gps_positions.csv           # filename, latitude, longitude, captured_at, compass_angle, is_pano, image_type
+│   ├── gps_positions.csv           # filename, latitude, longitude, captured_at, compass_angle, is_pano, image_type, position_source
 │   ├── metadata.json               # full Mapillary metadata per image (camera, size, sequence id, ...)
 │   ├── ground_truth_labels.jsonl   # manual labels (one line per image x question)
 │   ├── ground_truth_labels.jsonl.bak   # automatic backup made by gt_corrector.py
@@ -169,7 +169,9 @@ data/
 └── model_comparison/               # paper figures (utils/model_comparison.py)
 ```
 
-`<Continent>` is one of `Africa`, `America`, `Asia`, `Europe`, `Oceania` (North and South America share `America`). Some older sequences also contain `gps_positions.json` and `detections.json` (Mapillary object detections). They come from an earlier version of the download script and are not used.
+`<Continent>` is one of `Africa`, `America`, `Asia`, `Europe`, `Oceania` (North and South America share `America`).
+
+Sequences downloaded before September 2026 use the **original** device GPS (`geometry`) and have no `position_source` column. Newer downloads use the computed geometry (§5.3). Some older sequences also contain a `gps_positions.json` from an earlier version of the download script. It is not used.
 
 A folder counts as an **annotated sequence** (and is picked up automatically by the runner and the evaluation) as soon as it contains `ground_truth_labels.jsonl`.
 
@@ -323,7 +325,7 @@ A good sequence:
 - **Has enough frames.** The script keeps every second image, and you need 20 good keyframes, so aim for sequences of **≥ 100 images** (existing ones have 45–900 downloaded frames).
 - **Is sharp and in daylight**, with images not heavily blurred or covered by a car hood or dashboard.
 - **Adds diversity**: a new city or country, or a new kind of environment (market street, unpaved road, stairs, construction works, crowded square...). The paper shows the weakest categories are **Non-Sidewalk, Construction, Stairs and Surface** (few positive examples). Sequences containing those are especially valuable.
-- 360° sequences are OK: the script automatically crops the forward-facing 90° view using the compass angle.
+- **Is not 360°.** Panoramic sequences (`camera_type` `spherical`/`equirectangular`) are **not accepted**: the download script refuses them. Check `camera_type` as shown in §5.2 before choosing.
 
 Before downloading, check with Antoni that the city or sequence is not already in the dataset (see §3).
 
@@ -337,7 +339,7 @@ curl "https://graph.mapillary.com/<IMAGE_ID>?fields=id,sequence,captured_at,came
 # -> {"id": "...", "sequence": "5xBMc2sYv7nOLRUSoCrw8f", "captured_at": ..., "camera_type": "perspective"}
 ```
 
-The `sequence` value (a ~22-character string) is the sequence ID. `camera_type` tells you whether it is a normal (`perspective`) or 360° (`spherical`/`equirectangular`) sequence.
+The `sequence` value (a ~22-character string) is the sequence ID. `camera_type` must be `perspective` (or `fisheye`). If it is `spherical` or `equirectangular`, the sequence is 360° and won't be accepted: pick another one.
 
 ### 5.3 Download it
 
@@ -349,10 +351,10 @@ Folder name (`--city`) convention: `CamelCase`, no spaces or accents, city name 
 
 What it does:
 
-- Lists all image IDs of the sequence and keeps **every second image, up to 601 images**.
-- Downloads the 2048 px version of each one to `data/<Continent>/<City>/images/0000_<imageId>.jpg`, `0001_...` (the prefix keeps the temporal order).
-- 360° images are cropped to the forward-facing 90° view.
-- Writes `metadata.json` (all fields) and `gps_positions.csv` (used by the event maps).
+- Lists all image IDs of the sequence. If the sequence is 360°, it stops without downloading anything.
+- Keeps **every second image, up to 601 images**, and downloads the 2048 px version of each one to `data/<Continent>/<City>/images/0000_<imageId>.jpg`, `0001_...` (the prefix keeps the temporal order). Any isolated 360° image in the sequence is skipped.
+- Uses Mapillary's **computed** position and heading (`computed_geometry`, `computed_compass_angle`: refined by Mapillary's 3D reconstruction). For images Mapillary hasn't processed yet, it falls back to the raw device GPS/compass (`geometry`, `compass_angle`). The `position_source` column says which one was used (`computed` / `original`).
+- Writes `metadata.json` (all fields, including both computed and original positions) and `gps_positions.csv` (used by the event maps).
 
 Then open the `images/` folder and check the result. If the sequence turns out to be bad, delete the folder and pick another one.
 

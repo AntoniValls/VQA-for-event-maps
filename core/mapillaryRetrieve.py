@@ -1,5 +1,6 @@
 """
 Downloads a Mapillary sequence into data/<Continent>/<City>/ (images/, metadata.json, gps_positions.csv).
+360° sequences are rejected. Positions use Mapillary's computed (SfM-refined) geometry when available.
 
     python core/mapillaryRetrieve.py --continent Asia --city Hanoi --sequence <SEQUENCE_ID>
 """
@@ -12,7 +13,6 @@ from tqdm import tqdm
 import time
 from PIL import Image
 from io import BytesIO
-import math
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -20,65 +20,42 @@ if str(ROOT) not in sys.path:
 
 from core.paths import CONTINENTS, get_setting, sequence_dir
 
-def extract_front_view(image_bytes, compass_angle=0, fov=90):
-    """
-    Extract front view from a 360° equirectangular image.
-    
-    Args:
-        image_bytes: Raw image bytes
-        compass_angle: Compass angle in degrees (0-360)
-        fov: Field of view in degrees (default 90)
-    
-    Returns:
-        PIL Image object of the front view
-    """
-    img = Image.open(BytesIO(image_bytes))
-    width, height = img.size
-    
-    # Check if it's a 360 image (width should be ~2x height for equirectangular)
-    aspect_ratio = width / height
-    if aspect_ratio < 1.8:  # Not a 360 image
-        return img
-    
-    # Calculate the center longitude based on compass angle
-    # Compass angle of 0 = North, 90 = East, etc.
-    center_lon = compass_angle
-    
-    # Calculate the horizontal slice to extract
-    # For equirectangular projection, longitude maps linearly to x-axis
-    fov_rad = math.radians(fov)
-    
-    # Calculate pixel range for the FOV
-    pixels_per_degree = width / 360
-    half_fov_pixels = int((fov / 2) * pixels_per_degree)
-    
-    # Center pixel based on compass angle
-    center_pixel = int((center_lon / 360) * width)
-    
-    # Calculate left and right bounds
-    left = (center_pixel - half_fov_pixels) % width
-    right = (center_pixel + half_fov_pixels) % width
-    
-    # Handle wrapping around the image
-    if left < right:
-        # Simple case: no wrapping
-        front_view = img.crop((left, 0, right, height))
-    else:
-        # Wrapping case: need to stitch two parts
-        right_part = img.crop((left, 0, width, height))
-        left_part = img.crop((0, 0, right, height))
-        
-        # Create new image and paste parts
-        front_view = Image.new('RGB', (right_part.width + left_part.width, height))
-        front_view.paste(right_part, (0, 0))
-        front_view.paste(left_part, (right_part.width, 0))
-    
-    return front_view
+# 360° imagery is not accepted: only regular (perspective / fisheye) cameras.
+PANORAMIC_CAMERA_TYPES = {"spherical", "equirectangular"}
 
-def mapillary_retrieve(mly_key, seq, output_folder):
+IMAGE_FIELDS = ("id,thumb_2048_url,computed_geometry,geometry,captured_at,computed_compass_angle,compass_angle,"
+                "camera_type,is_pano,camera_parameters,width,height")
+
+def is_panoramic(image_data):
+    return bool(image_data.get('is_pano')) or image_data.get('camera_type') in PANORAMIC_CAMERA_TYPES
+
+def get_position(image_data):
+    """
+    Position and heading of an image. Uses Mapillary's computed (SfM-refined) values,
+    falling back to the raw device GPS/compass when the image has not been processed.
+    """
+    geometry = image_data.get('computed_geometry')
+    source = 'computed'
+    if not geometry:
+        geometry = image_data.get('geometry', {})
+        source = 'original'
+    lon, lat = geometry.get('coordinates', [None, None])
+
+    compass_angle = image_data.get('computed_compass_angle')
+    if compass_angle is None:
+        compass_angle = image_data.get('compass_angle', 0)
+    return lat, lon, compass_angle, source
+
+def get_image_data(mly_key, image_id):
+    url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields={IMAGE_FIELDS}'
+    response = requests.get(url)
+    if response.status_code != 200:
+        return None
+    return response.json()
+
+def mapillary_retrieve(mly_key, seq, output_folder, max_images=601):
      
     images_folder = output_folder / 'images'
-    images_folder.mkdir(exist_ok=True)
 
     # Step 1: Get all image IDs from the sequence
     print("Fetching image IDs from sequence...")
@@ -91,104 +68,85 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     data = response.json()
     image_ids = [obj['id'] for obj in data['data']]
     print(f"Found {len(image_ids)} images in sequence")
+    if not image_ids:
+        raise RuntimeError(f"Sequence {seq} has no images")
 
-    # Step 2: Download images and collect metadata
+    # Reject 360° sequences before downloading anything
+    first = get_image_data(mly_key, image_ids[0])
+    if first is None:
+        raise RuntimeError(f"Could not read the metadata of image {image_ids[0]}")
+    if is_panoramic(first):
+        raise RuntimeError(f"Sequence {seq} is 360° (camera_type={first.get('camera_type')}). "
+                           "360° sequences are not accepted, choose another one.")
+
+    images_folder.mkdir(parents=True, exist_ok=True)
+
+    # Step 2: Download every second image (up to max_images) and collect metadata
     metadata = []
-    detections = {}
+    skipped_pano = 0
+    skipped_error = 0
 
-    for idx, image_id in enumerate(tqdm(image_ids[::2], desc="Downloading images")):
-        if idx <= 600: # Limit
-            # Get image metadata (including GPS and camera type)
-            meta_url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields=id,thumb_2048_url,geometry,captured_at,compass_angle,camera_type,is_pano,camera_parameters,width,height'            
-            meta_response = requests.get(meta_url)
-            
-            if meta_response.status_code == 200:
-                image_data = meta_response.json()
-                
-                # Extract GPS coordinates
-                geometry = image_data.get('geometry', {})
-                coordinates = geometry.get('coordinates', [None, None])
-                lon, lat = coordinates[0], coordinates[1]
-                
-                compass_angle = image_data.get('compass_angle', 0)
-                is_pano = image_data.get('is_pano', False)
-                camera_type = image_data.get('camera_type', 'unknown')
-                camera_parameters = image_data.get('camera_parameters', 'unknown')
-                heigh = image_data.get('height', 'unknown')
-                width = image_data.get('width', 'unknown')
+    for idx, image_id in enumerate(tqdm(image_ids[::2][:max_images], desc="Downloading images")):
+        image_data = get_image_data(mly_key, image_id)
+        image_url = image_data.get('thumb_2048_url') if image_data else None
+        if not image_url:
+            skipped_error += 1
+            continue
 
-                # Download the image
-                image_url = image_data.get('thumb_2048_url')
-                if image_url:
-                    img_response = requests.get(image_url)
-                    if img_response.status_code == 200:
-                        # Process image based on whether it's 360 or not
-                        if is_pano or camera_type == 'spherical':
-                            print("ATENTION: images are 360s")
-                            # Extract front view from 360 image
-                            front_view_img = extract_front_view(
-                                img_response.content, 
-                                compass_angle=compass_angle,
-                                fov=90  # 90 degree field of view
-                            )
-                            image_type = '360_front'
-                        else:
-                            # Regular image, just open it
-                            front_view_img = Image.open(BytesIO(img_response.content))
-                            image_type = 'regular'
-                        
-                        # Save image with sequence number
-                        image_filename = f"{idx:04d}_{image_id}.jpg"
-                        image_path = images_folder / image_filename
-                        front_view_img.save(image_path, 'JPEG', quality=95)
-                        
-                        # Store metadata
-                        metadata.append({
-                            'image_id': image_id,
-                            'seq_id': seq,
-                            'filename': image_filename,
-                            'latitude': lat,
-                            'longitude': lon,
-                            'captured_at': image_data.get('captured_at'),
-                            'compass_angle': compass_angle,
-                            'is_pano': is_pano,
-                            'camera_type': camera_type,
-                            'image_type': image_type,
-                            'camera_parameters': camera_parameters,
-                            'width': width,
-                            'heigh': heigh
-                        })
-            
-            # Rate limiting - be nice to the API
-            time.sleep(0.1)
+        # Mixed sequences: skip any 360° image
+        if is_panoramic(image_data):
+            skipped_pano += 1
+            continue
 
-    # Step 3: Save metadata to JSON files
+        img_response = requests.get(image_url)
+        if img_response.status_code != 200:
+            skipped_error += 1
+            continue
+
+        lat, lon, compass_angle, position_source = get_position(image_data)
+
+        # Save image with sequence number
+        image_filename = f"{idx:04d}_{image_id}.jpg"
+        Image.open(BytesIO(img_response.content)).convert('RGB').save(images_folder / image_filename, 'JPEG', quality=95)
+
+        # Store metadata (both computed and original positions are kept)
+        metadata.append({
+            'image_id': image_id,
+            'seq_id': seq,
+            'filename': image_filename,
+            'latitude': lat,
+            'longitude': lon,
+            'position_source': position_source,
+            'computed_geometry': image_data.get('computed_geometry'),
+            'geometry': image_data.get('geometry'),
+            'captured_at': image_data.get('captured_at'),
+            'compass_angle': compass_angle,
+            'computed_compass_angle': image_data.get('computed_compass_angle'),
+            'original_compass_angle': image_data.get('compass_angle'),
+            'is_pano': image_data.get('is_pano', False),
+            'camera_type': image_data.get('camera_type', 'unknown'),
+            'image_type': 'regular',
+            'camera_parameters': image_data.get('camera_parameters', 'unknown'),
+            'width': image_data.get('width', 'unknown'),
+            'height': image_data.get('height', 'unknown')
+        })
+
+        # Rate limiting - be nice to the API
+        time.sleep(0.1)
+
+    # Step 3: Save metadata
     print("\nSaving metadata...")
-
-    # Save GPS positions
-    gps_data = [{
-        'image_id': item['image_id'],
-        'filename': item['filename'],
-        'latitude': item['latitude'],
-        'longitude': item['longitude'],
-        'captured_at': item['captured_at'],
-        'compass_angle': item['compass_angle'],
-        'is_pano': item['is_pano'],
-        'image_type': item['image_type'],
-        'camera_parameters': item['camera_parameters'],
-        'width': item['width'],
-        'heigh': item['heigh']
-    } for item in metadata]
 
     # Save complete metadata
     with open(output_folder / 'metadata.json', 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    # Create a simple CSV for easy viewing
+    # Create a simple CSV (used by the event maps)
     with open(output_folder / 'gps_positions.csv', 'w') as f:
-        f.write('filename,latitude,longitude,captured_at,compass_angle,is_pano,image_type\n')
-        for item in gps_data:
-            f.write(f"{item['filename']},{item['latitude']},{item['longitude']},{item['captured_at']},{item['compass_angle']},{item['is_pano']},{item['image_type']}\n")
+        f.write('filename,latitude,longitude,captured_at,compass_angle,is_pano,image_type,position_source\n')
+        for item in metadata:
+            f.write(f"{item['filename']},{item['latitude']},{item['longitude']},{item['captured_at']},"
+                    f"{item['compass_angle']},{item['is_pano']},{item['image_type']},{item['position_source']}\n")
 
     print(f"\nDownload complete!")
     print(f"Images saved to: {images_folder}")
@@ -196,10 +154,13 @@ def mapillary_retrieve(mly_key, seq, output_folder):
     print(f"CSV saved to: {output_folder / 'gps_positions.csv'}")
 
     # Print summary
-    pano_count = sum(1 for item in metadata if item['image_type'] == '360_front')
-    regular_count = sum(1 for item in metadata if item['image_type'] == 'regular')
-    print(f"\nProcessed {pano_count} 360° images (extracted front view)")
-    print(f"Processed {regular_count} regular images")
+    n_computed = sum(1 for item in metadata if item['position_source'] == 'computed')
+    print(f"\nDownloaded {len(metadata)} images "
+          f"({n_computed} with computed position, {len(metadata) - n_computed} with original GPS)")
+    if skipped_pano:
+        print(f"Skipped {skipped_pano} 360° images")
+    if skipped_error:
+        print(f"Skipped {skipped_error} images that could not be downloaded")
 
     return
 
@@ -226,7 +187,7 @@ if __name__ == "__main__":
     if (output_folder / "images").is_dir() and any((output_folder / "images").iterdir()):
         sys.exit(f"{output_folder}/images already exists and is not empty. Delete it or choose another --city.")
 
-    # Create output directories
-    output_folder.mkdir(parents=True, exist_ok=True)
-
-    mapillary_retrieve(mly_key, args.sequence, output_folder)
+    try:
+        mapillary_retrieve(mly_key, args.sequence, output_folder)
+    except RuntimeError as e:
+        sys.exit(f"ERROR: {e}")
