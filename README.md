@@ -139,7 +139,9 @@ cd VQA-for-event-maps
 tar -xzf VQA-dataset-<date>.tar.gz          # creates/fills ./data/
 ```
 
-**Ask Antoni for the link to the latest dataset archive.** To keep the data elsewhere (external disk...), extract it there and set `VQA_DATA_DIR` in `.env`.
+**Latest dataset archive:** [`VQA-dataset-2026-09-30.tar.gz`](https://drive.proton.me/urls/H4D71GPPNR#efxCQZ3fbPLX) (5.7 GB, Proton Drive).
+
+To keep the data elsewhere (external disk...), extract it there and set `VQA_DATA_DIR` in `.env`.
 
 Only the maintainer publishes new dataset versions:
 
@@ -328,21 +330,15 @@ A good sequence:
 - **Has enough frames.** The script keeps every second image, and you need 20 good keyframes, so aim for sequences of **≥ 100 images** (existing ones have 45–900 downloaded frames).
 - **Is sharp and in daylight**, with images not heavily blurred or covered by a car hood or dashboard.
 - **Adds diversity**: a new city or country, or a new kind of environment (market street, unpaved road, stairs, construction works, crowded square...). The paper shows the weakest categories are **Non-Sidewalk, Construction, Stairs and Surface** (few positive examples). Sequences containing those are especially valuable.
-- **Is not 360°.** Panoramic sequences (`camera_type` `spherical`/`equirectangular`) are **not accepted**: the download script refuses them. Check `camera_type` as shown in §5.2 before choosing.
+- **Is not 360°.** Panoramic sequences (`camera_type` `spherical`/`equirectangular`) are **not accepted**: the download script refuses them. Check it in the viewer before choosing (§5.2).
 
 Before downloading, check with Antoni that the city or sequence is not already in the dataset (see §3).
 
 ### 5.2 Get the sequence ID
 
-When you open an image in the Mapillary viewer, the URL contains `pKey=<IMAGE_ID>`. Ask the API which sequence that image belongs to:
+In the Mapillary web viewer (<https://www.mapillary.com/app>), click on any image of the sequence you chose. The image details panel shows the **sequence ID** (a ~22-character string such as `5xBMc2sYv7nOLRUSoCrw8f`). Copy it: it is the `--sequence` argument of the next step.
 
-```bash
-set -a; source .env; set +a      # loads MAPILLARY_TOKEN into the shell
-curl "https://graph.mapillary.com/<IMAGE_ID>?fields=id,sequence,captured_at,camera_type&access_token=$MAPILLARY_TOKEN"
-# -> {"id": "...", "sequence": "5xBMc2sYv7nOLRUSoCrw8f", "captured_at": ..., "camera_type": "perspective"}
-```
-
-The `sequence` value (a ~22-character string) is the sequence ID. `camera_type` must be `perspective` (or `fisheye`). If it is `spherical` or `equirectangular`, the sequence is 360° and won't be accepted: pick another one.
+While you are there, check that the images are regular photos and not 360° panoramas (you can drag a 360° image around in the viewer). If the sequence is 360°, the download script will refuse it: pick another one.
 
 ### 5.3 Download it
 
