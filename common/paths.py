@@ -25,7 +25,7 @@ def get_setting(name, default=None):
         for line in ENV_PATH.read_text().splitlines():
             key, _, val = line.partition("=")
             if key.strip() == name:
-                return val.strip().strip('"').strip("'")
+                return val.strip().strip('"').strip("'").strip()
     return default
 
 

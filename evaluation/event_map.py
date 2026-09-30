@@ -16,14 +16,46 @@ from pathlib import Path
 import folium
 import osmnx as ox
 import pandas as pd
+import xyzservices.providers as xyz
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from common.paths import PROMPTS_PATH, sequence_dir
+from common.paths import PROMPTS_PATH, get_setting, sequence_dir
 from evaluation.risk import image_risk, risk_color
+
+# Cache the OpenStreetMap street network downloads in <repo>/cache (git-ignored), whatever the working directory
+ox.settings.cache_folder = str(ROOT / "cache")
+
+
+# Background map styles. OpenStreetMap's own tile servers block maps opened as local files,
+# so the OSM-based backgrounds come from MapTiler, which needs a (free) key.
+TILE_STYLES = ["streets", "positron", "light"]
+MAPTILER_STYLES = {"streets": "Streets", "positron": "Positron"}
+
+def add_background(m, style):
+    """
+    streets:  MapTiler Streets (OpenStreetMap data)        -> needs MAPTILER_API_KEY in .env
+    positron: MapTiler Positron, light grey like the paper -> needs MAPTILER_API_KEY in .env
+    light:    Esri light grey canvas, no key needed (native zoom <= 16, less detail)
+    """
+    if style in MAPTILER_STYLES:
+        key = get_setting("MAPTILER_API_KEY")
+        if not key or key.startswith("your_"):
+            raise RuntimeError(
+                f"--tiles {style} needs MAPTILER_API_KEY in .env (free account: https://cloud.maptiler.com/account/keys/). "
+                "Without a key, use --tiles light.")
+        provider = getattr(xyz.MapTiler, MAPTILER_STYLES[style])(key=key)
+        folium.TileLayer(provider, name=style, max_zoom=21).add_to(m)
+    elif style == "light":
+        folium.TileLayer(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+            attr="Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ", name="light",
+            max_native_zoom=16, max_zoom=19).add_to(m)
+    else:
+        raise ValueError(f"Unknown tile style '{style}' (choose from {TILE_STYLES})")
 
 
 def load_positions(seq_dir):
@@ -42,12 +74,14 @@ def generate_event_map(seq_dir,
                        output_html_path,
                        map_title,
                        prompt_json_path=PROMPTS_PATH,
-                       show=True):
+                       show=True,
+                       tiles="streets"):
     """
     Args:
         seq_dir: data/<Continent>/<City> (metadata.json and images_selected/ are read from here)
         answers_jsonl_path: model answers.jsonl or ground_truth_labels.jsonl
         map_title: title shown on the map (model name or "Ground Truth")
+        tiles: background style, one of TILE_STYLES
     """
     image_dir = Path(seq_dir) / "images_selected"
 
@@ -99,7 +133,8 @@ def generate_event_map(seq_dir,
             edge_risks[eid] = norm_score
 
     # 4. Initialize Map
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=18, tiles='CartoDB positron')
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=18, tiles=None)
+    add_background(m, tiles)
 
     title_html = f'''
     <div style="position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
@@ -229,16 +264,24 @@ if __name__ == "__main__":
     parser.add_argument("--continent", required=True)
     parser.add_argument("--city", required=True)
     parser.add_argument("--model", default="qwen-vl")
+    parser.add_argument("--tiles", choices=TILE_STYLES, default="streets",
+                        help="Background map: streets (default) or positron (paper look), both need MAPTILER_API_KEY; "
+                             "light (no key)")
     parser.add_argument("--no-show", action="store_true", help="Don't open the maps in the browser")
     args = parser.parse_args()
 
     seq_dir = sequence_dir(args.continent, args.city)
     model_dir = seq_dir / "results" / args.model
 
-    # Model map
-    generate_event_map(seq_dir, model_dir / "answers.jsonl", str(model_dir / "interactive_map.html"),
-                       map_title=args.model, show=not args.no_show)
+    try:
+        add_background(folium.Map(tiles=None), args.tiles)   # fail fast if the map key is missing
 
-    # GT map — saved in the sequence folder for easy comparison
-    generate_event_map(seq_dir, seq_dir / "ground_truth_labels.jsonl", str(seq_dir / "interactive_map_gt.html"),
-                       map_title="Ground Truth", show=not args.no_show)
+        # Model map
+        generate_event_map(seq_dir, model_dir / "answers.jsonl", str(model_dir / "interactive_map.html"),
+                           map_title=args.model, show=not args.no_show, tiles=args.tiles)
+
+        # GT map — saved in the sequence folder for easy comparison
+        generate_event_map(seq_dir, seq_dir / "ground_truth_labels.jsonl", str(seq_dir / "interactive_map_gt.html"),
+                           map_title="Ground Truth", show=not args.no_show, tiles=args.tiles)
+    except (RuntimeError, FileNotFoundError) as e:
+        sys.exit(f"ERROR: {e}")

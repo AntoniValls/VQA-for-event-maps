@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_DIR="${VQA_DATA_DIR:-}"
 if [[ -z "$DATA_DIR" && -f "$ROOT/.env" ]]; then
-    DATA_DIR="$(sed -n 's/^VQA_DATA_DIR=//p' "$ROOT/.env" | tr -d "\"'")"
+    DATA_DIR="$(sed -n 's/^VQA_DATA_DIR=//p' "$ROOT/.env" | tr -d "\"'" | xargs)"
 fi
 DATA_DIR="${DATA_DIR:-$ROOT/data}"
 [[ -d "$DATA_DIR" ]] || { echo "Data folder not found: $DATA_DIR" >&2; exit 1; }

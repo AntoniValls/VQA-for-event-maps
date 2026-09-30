@@ -90,6 +90,7 @@ Personal settings and credentials live in a `.env` file at the repository root. 
 | Variable | Needed for | Default |
 |---|---|---|
 | `MAPILLARY_TOKEN` | Downloading Mapillary sequences | — |
+| `MAPTILER_API_KEY` | Background of the event maps (§9) | — |
 | `VQA_DATA_DIR` | Keeping the dataset outside the repository | `<repo>/data` |
 
 **Getting a Mapillary token:**
@@ -326,7 +327,7 @@ Browse <https://www.mapillary.com/app>, zoom into a city and click on the green 
 
 A good sequence:
 
-- **Is taken from a pedestrian's point of view**: someone walking on the sidewalk, crossing streets, with the camera facing forward. Avoid car/dashcam sequences driving on the road, which bias the *Non-Sidewalk* and *Vehicles* questions.
+- **Is taken from a pedestrian's point of view**: someone walking on the sidewalk, crossing streets, with the camera facing forward. Avoid car/dashcam sequences driving on the road, which bias the *Non-Sidewalk* and *Vehicles* questions. The download script refuses sequences that Mapillary marks as not captured on foot (`on_foot`), and warns when Mapillary doesn't know.
 - **Has enough frames.** The script keeps every second image, and you need 20 good keyframes, so aim for sequences of **≥ 100 images** (existing ones have 45–900 downloaded frames).
 - **Is sharp and in daylight**, with images not heavily blurred or covered by a car hood or dashboard.
 - **Adds diversity**: a new city or country, or a new kind of environment (market street, unpaved road, stairs, construction works, crowded square...). The paper shows the weakest categories are **Non-Sidewalk, Construction, Stairs and Surface** (few positive examples). Sequences containing those are especially valuable.
@@ -334,9 +335,12 @@ A good sequence:
 
 Before downloading, check with Antoni that the city or sequence is not already in the dataset (see §3).
 
-### 5.2 Get the sequence ID
+### 5.2 Get the sequence ID (or an image ID)
 
-In the Mapillary web viewer (<https://www.mapillary.com/app>), click on any image of the sequence you chose. The image details panel shows the **sequence ID** (a ~22-character string such as `5xBMc2sYv7nOLRUSoCrw8f`). Copy it: it is the `--sequence` argument of the next step.
+In the Mapillary web viewer (<https://www.mapillary.com/app>), click on any image of the sequence you chose. Either of these works for the next step:
+
+- **The capture key** shown in the image details panel (a ~22-character string such as `5xBMc2sYv7nOLRUSoCrw8f`). The web viewer now calls sequences "captures", but it is the same thing the API calls the **sequence ID**. Pass it as `--sequence`.
+- **The image ID**, i.e. the `pKey=<IMAGE_ID>` value in the viewer URL. Pass it as `--image`, and the script looks up its sequence for you.
 
 While you are there, check that the images are regular photos and not 360° panoramas (you can drag a 360° image around in the viewer). If the sequence is 360°, the download script will refuse it: pick another one.
 
@@ -344,16 +348,19 @@ While you are there, check that the images are regular photos and not 360° pano
 
 ```bash
 python dataset/download_mapillary.py --continent Asia --city Hanoi --sequence AbCdEf1234567890xyz
+# or, from any image of the sequence:
+python dataset/download_mapillary.py --continent Asia --city Hanoi --image 1247725302301351
 ```
 
 Folder name (`--city`) convention: `CamelCase`, no spaces or accents, city name in English. If a city gets a second sequence, number them (`Tokio1`, `Tokio2`). The script refuses to overwrite a folder that already has images.
 
 What it does:
 
-- Lists all image IDs of the sequence. If the sequence is 360°, it stops without downloading anything.
+- Lists all image IDs of the sequence. If the sequence is 360°, or Mapillary marks it as not captured on foot, it stops without downloading anything. For a sequence you have checked by eye, `--allow-not-on-foot` skips the second check.
+- If Mapillary answers with temporary errors ("Service temporarily unavailable"), it retries a few times on its own. If it still fails, try again later.
 - Keeps **every second image, up to 601 images**, and downloads the 2048 px version of each one to `data/<Continent>/<City>/images/0000_<imageId>.jpg`, `0001_...` (the prefix keeps the temporal order). Any isolated 360° image in the sequence is skipped.
-- Uses Mapillary's **computed** position and heading (`computed_geometry`, `computed_compass_angle`: refined by Mapillary's 3D reconstruction). For images Mapillary hasn't processed yet, it falls back to the raw device GPS/compass (`geometry`, `compass_angle`). The `position_source` column says which one was used (`computed` / `original`).
-- Writes `metadata.json`: one entry per image with its position (both computed and original are kept), heading, camera and size. The event maps read the positions from it.
+- Uses Mapillary's **computed** position and heading (`computed_geometry`, `computed_compass_angle`: refined by Mapillary's 3D reconstruction). For images Mapillary hasn't processed yet, it falls back to the raw device GPS/compass (`geometry`, `compass_angle`). The `position_source` field in `metadata.json` says which one was used (`computed` / `original`).
+- Writes `metadata.json`: one entry per image with its position (both computed and original are kept), heading, camera, size and `on_foot`. The event maps read the positions from it.
 
 Then open the `images/` folder and check the result. If the sequence turns out to be bad, delete the folder and pick another one.
 
@@ -533,7 +540,24 @@ Cross-sequence tables and figures (paper Tables I–III): `python evaluation/com
 ```bash
 python evaluation/event_map.py --continent America --city NewYork --model qwen-vl
 # -> results/qwen-vl/interactive_map.html (model) and interactive_map_gt.html (GT)
+python evaluation/event_map.py --continent America --city NewYork --model qwen-vl --tiles positron
 ```
+
+Background map (`--tiles`):
+
+| Style | Look | Needs |
+|---|---|---|
+| `streets` (default) | OpenStreetMap-based street map (MapTiler) | `MAPTILER_API_KEY` in `.env` |
+| `positron` | Light grey, as in the paper figures (MapTiler) | `MAPTILER_API_KEY` in `.env` |
+| `light` | Light grey (Esri), less detail when zoomed in | nothing |
+
+OpenStreetMap's own tile servers block maps opened as local HTML files (you get "403 Access blocked" tiles), so the OSM backgrounds come from MapTiler. Create a free account at <https://cloud.maptiler.com/account/keys/>, copy the key, and add it to `.env`:
+
+```bash
+MAPTILER_API_KEY="..."
+```
+
+The street network is cached in `cache/` (git-ignored), so the second map of a city doesn't download it again.
 
 Positions are read from the sequence `metadata.json` (its `filename` entries must match the names in `images_selected/`).
 

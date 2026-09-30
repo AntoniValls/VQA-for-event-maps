@@ -3,6 +3,10 @@ Downloads a Mapillary sequence into data/<Continent>/<City>/ (images/ + metadata
 360° sequences are rejected. Positions use Mapillary's computed (SfM-refined) geometry when available.
 
     python dataset/download_mapillary.py --continent Asia --city Hanoi --sequence <SEQUENCE_ID>
+    python dataset/download_mapillary.py --continent Asia --city Hanoi --image <IMAGE_ID>   # any image of the sequence
+
+Sequences not captured on foot (e.g. from a car) are rejected unless --allow-not-on-foot is given.
+The web viewer calls a sequence a "capture": the capture key is the sequence ID.
 """
 import argparse
 import sys
@@ -24,7 +28,7 @@ from common.paths import CONTINENTS, get_setting, sequence_dir
 PANORAMIC_CAMERA_TYPES = {"spherical", "equirectangular"}
 
 IMAGE_FIELDS = ("id,thumb_2048_url,computed_geometry,geometry,captured_at,computed_compass_angle,compass_angle,"
-                "camera_type,is_pano,camera_parameters,width,height")
+                "camera_type,is_pano,camera_parameters,width,height,on_foot")
 
 def is_panoramic(image_data):
     return bool(image_data.get('is_pano')) or image_data.get('camera_type') in PANORAMIC_CAMERA_TYPES
@@ -46,27 +50,70 @@ def get_position(image_data):
         compass_angle = image_data.get('compass_angle', 0)
     return lat, lon, compass_angle, source
 
+def api_get(url, retries=5, backoff=2.0):
+    """
+    GET with retries: Mapillary often answers with transient errors (HTTP 5xx / 429,
+    "Service temporarily unavailable") that succeed a few seconds later.
+    """
+    response = None
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, timeout=60)
+            if response.status_code == 200 or (response.status_code < 500 and response.status_code != 429):
+                return response
+        except requests.RequestException as e:
+            print(f"  Request error: {e}")
+        if attempt < retries - 1:
+            wait = backoff * 2 ** attempt
+            status = response.status_code if response is not None else "no response"
+            print(f"  Mapillary error ({status}), retrying in {wait:.0f}s ({attempt + 1}/{retries - 1})...")
+            time.sleep(wait)
+    return response
+
 def get_image_data(mly_key, image_id):
     url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields={IMAGE_FIELDS}'
-    response = requests.get(url)
-    if response.status_code != 200:
+    response = api_get(url)
+    if response is None or response.status_code != 200:
         return None
     return response.json()
 
-def mapillary_retrieve(mly_key, seq, output_folder, max_images=601):
+def get_sequence_of_image(mly_key, image_id):
+    """Sequence ID (the "capture key" in the web viewer) that an image belongs to."""
+    response = api_get(f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields=id,sequence')
+    if response is None or response.status_code != 200:
+        detail = f"HTTP {response.status_code} {response.text[:200]}" if response is not None else "no response"
+        raise RuntimeError(f"Could not read image {image_id}: {detail}")
+    seq = response.json().get('sequence')
+    if not seq:
+        raise RuntimeError(f"Image {image_id} does not belong to any sequence")
+    return seq
+
+def get_sequence_image_ids(mly_key, seq):
+    """Image IDs of a sequence in capture order."""
+    response = api_get(f'https://graph.mapillary.com/image_ids?access_token={mly_key}&sequence_id={seq}')
+    if response is not None and response.status_code == 200:
+        return [obj['id'] for obj in response.json()['data']]
+
+    # Fallback: image search endpoint (not ordered -> sort by capture time)
+    print("  image_ids endpoint failed, trying the image search endpoint...")
+    fallback = api_get(f'https://graph.mapillary.com/images?access_token={mly_key}'
+                       f'&sequence_ids={seq}&fields=id,captured_at&limit=2000')
+    if fallback is not None and fallback.status_code == 200:
+        images = sorted(fallback.json()['data'], key=lambda x: x.get('captured_at', 0))
+        return [obj['id'] for obj in images]
+
+    last = fallback if fallback is not None else response
+    detail = f"HTTP {last.status_code} {last.text[:200]}" if last is not None else "no response"
+    raise RuntimeError(f"Error fetching sequence {seq}: {detail}. "
+                       "If the error is transient, just try again in a few minutes.")
+
+def mapillary_retrieve(mly_key, seq, output_folder, max_images=601, allow_not_on_foot=False):
      
     images_folder = output_folder / 'images'
 
     # Step 1: Get all image IDs from the sequence
     print("Fetching image IDs from sequence...")
-    url = f'https://graph.mapillary.com/image_ids?access_token={mly_key}&sequence_id={seq}'
-    response = requests.get(url)
-
-    if response.status_code != 200:
-        raise RuntimeError(f"Error fetching sequence {seq}: HTTP {response.status_code} {response.text[:200]}")
-
-    data = response.json()
-    image_ids = [obj['id'] for obj in data['data']]
+    image_ids = get_sequence_image_ids(mly_key, seq)
     print(f"Found {len(image_ids)} images in sequence")
     if not image_ids:
         raise RuntimeError(f"Sequence {seq} has no images")
@@ -78,6 +125,15 @@ def mapillary_retrieve(mly_key, seq, output_folder, max_images=601):
     if is_panoramic(first):
         raise RuntimeError(f"Sequence {seq} is 360° (camera_type={first.get('camera_type')}). "
                            "360° sequences are not accepted, choose another one.")
+
+    # Pedestrian point of view: on_foot is True / False, or None when Mapillary doesn't know
+    on_foot = first.get('on_foot')
+    if on_foot is False and not allow_not_on_foot:
+        raise RuntimeError(f"Sequence {seq} was not captured on foot (on_foot=False, probably from a vehicle). "
+                           "Choose a pedestrian sequence, or use --allow-not-on-foot if you are sure.")
+    if on_foot is None:
+        print("WARNING: Mapillary doesn't know whether this sequence was captured on foot. "
+              "Check in the images that it is a pedestrian point of view.")
 
     images_folder.mkdir(parents=True, exist_ok=True)
 
@@ -98,8 +154,8 @@ def mapillary_retrieve(mly_key, seq, output_folder, max_images=601):
             skipped_pano += 1
             continue
 
-        img_response = requests.get(image_url)
-        if img_response.status_code != 200:
+        img_response = api_get(image_url)
+        if img_response is None or img_response.status_code != 200:
             skipped_error += 1
             continue
 
@@ -124,6 +180,7 @@ def mapillary_retrieve(mly_key, seq, output_folder, max_images=601):
             'computed_compass_angle': image_data.get('computed_compass_angle'),
             'original_compass_angle': image_data.get('compass_angle'),
             'is_pano': image_data.get('is_pano', False),
+            'on_foot': image_data.get('on_foot'),
             'camera_type': image_data.get('camera_type', 'unknown'),
             'image_type': 'regular',
             'camera_parameters': image_data.get('camera_parameters', 'unknown'),
@@ -170,7 +227,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download a Mapillary sequence")
     parser.add_argument("--continent", required=True, choices=CONTINENTS)
     parser.add_argument("--city", required=True, help="Folder name, CamelCase without spaces (e.g. BuenosAires, Tokio2)")
-    parser.add_argument("--sequence", required=True, help="Mapillary sequence ID")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--sequence", help='Mapillary sequence ID ("capture key" in the web viewer)')
+    source.add_argument("--image", help="ID of any image of the sequence (pKey=... in the viewer URL)")
+    parser.add_argument("--allow-not-on-foot", action="store_true",
+                        help="Accept sequences that Mapillary marks as not captured on foot")
     args = parser.parse_args()
 
     mly_key = load_mapillary_token()
@@ -180,6 +241,10 @@ if __name__ == "__main__":
         sys.exit(f"{output_folder}/images already exists and is not empty. Delete it or choose another --city.")
 
     try:
-        mapillary_retrieve(mly_key, args.sequence, output_folder)
+        seq = args.sequence
+        if args.image:
+            seq = get_sequence_of_image(mly_key, args.image)
+            print(f"Image {args.image} belongs to sequence {seq}")
+        mapillary_retrieve(mly_key, seq, output_folder, allow_not_on_foot=args.allow_not_on_foot)
     except RuntimeError as e:
         sys.exit(f"ERROR: {e}")
