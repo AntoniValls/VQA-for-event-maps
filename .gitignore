@@ -2,6 +2,16 @@
 __pycache__/
 viz/generate_paper_figures.py
 cache/
+
+# Credentials (keep .env.example as the template)
+.env
+.env.*
+!.env.example
+*.key
+*secret*
+*token*
+
+# Heavy data: images, recordings, GPS/metadata, generated maps
 *.jpg
 *.jpeg
 *.png
@@ -9,3 +19,9 @@ cache/
 *.csv
 *.html
 *.json
+!inout/*.json
+
+# Archives (data is shared outside git)
+*.tar.gz
+*.tgz
+*.zip

@@ -1,3 +1,4 @@
+import os
 import requests
 import json
 from pathlib import Path
@@ -191,17 +192,37 @@ def mapillary_retrieve(mly_key, seq, output_folder):
 
     return
 
+def load_mapillary_token():
+    """
+    Read the Mapillary token from the MAPILLARY_TOKEN environment variable,
+    or from the (git-ignored) .env file at the repository root.
+    """
+    token = os.environ.get("MAPILLARY_TOKEN")
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not token and env_path.exists():
+        for line in env_path.read_text().splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "MAPILLARY_TOKEN":
+                token = value.strip().strip('"').strip("'")
+    if not token:
+        raise RuntimeError(
+            "MAPILLARY_TOKEN not found. Copy .env.example to .env and paste your "
+            "Mapillary client token there (see README, 'Mapillary access token')."
+        )
+    return token
+
 if __name__ == "__main__":
 
+    # (continent, city folder name, Mapillary sequence ID)
     todos = [
-        ("NewYork", "5xBMc2sYv7nOLRUSoCrw8f")
+        ("America", "NewYork", "5xBMc2sYv7nOLRUSoCrw8f")
         ]
 
     # Configuration
-    mly_key = 'MLY|25209140612031334|5db01650d125295c6bf8c95d9dae4418'
+    mly_key = load_mapillary_token()
 
-    for name, seq in todos:
-        output_folder = Path(f'../data/America/{name}/')
+    for continent, name, seq in todos:
+        output_folder = Path(f'../data/{continent}/{name}/')
 
         # Create output directories
         output_folder.mkdir(parents=True, exist_ok=True)
