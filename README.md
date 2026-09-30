@@ -361,7 +361,7 @@ Folder name (`--city`) convention: `CamelCase`, no spaces or accents, city name 
 What it does:
 
 - Lists all image IDs of the sequence. If the sequence is 360°, or Mapillary marks it as not captured on foot, it stops without downloading anything. For a sequence you have checked by eye, `--allow-not-on-foot` skips the second check.
-- If Mapillary answers with temporary errors ("Service temporarily unavailable"), it retries a few times on its own. If it still fails, try again later.
+- If Mapillary answers with temporary errors ("Service temporarily unavailable"), it retries a few times on its own. If it keeps failing, **check your token first**: Mapillary gives this same misleading error for an invalid token. Only then assume a real outage and try again later.
 - Keeps **every second image, up to 601 images**, and downloads the 2048 px version of each one to `data/<Continent>/<City>/images/0000_<imageId>.jpg`, `0001_...` (the prefix keeps the temporal order). Any isolated 360° image in the sequence is skipped.
 - Uses Mapillary's **computed** position and heading (`computed_geometry`, `computed_compass_angle`: refined by Mapillary's 3D reconstruction). For images Mapillary hasn't processed yet, it falls back to the raw device GPS/compass (`geometry`, `compass_angle`). The `position_source` field in `metadata.json` says which one was used (`computed` / `original`).
 - Writes `metadata.json`: one entry per image with its position (both computed and original are kept), heading, camera, size and `on_foot`. The event maps read the positions from it.

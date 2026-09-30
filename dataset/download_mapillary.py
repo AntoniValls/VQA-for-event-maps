@@ -58,7 +58,7 @@ def api_get(url, retries=5, backoff=2.0):
     response = None
     for attempt in range(retries):
         try:
-            response = requests.get(url, timeout=60)
+            response = requests.get(url, timeout=30)
             if response.status_code == 200 or (response.status_code < 500 and response.status_code != 429):
                 return response
         except requests.RequestException as e:
@@ -216,6 +216,11 @@ def mapillary_retrieve(mly_key, seq, output_folder, max_images=601, allow_not_on
 def load_mapillary_token():
     """Read MAPILLARY_TOKEN from the environment or from the (git-ignored) .env file."""
     token = get_setting("MAPILLARY_TOKEN")
+    if token and "your_client" in token:
+        raise RuntimeError(
+            "MAPILLARY_TOKEN in .env is still the example placeholder. Replace it with your own "
+            "Client Token from https://www.mapillary.com/dashboard/developers (README, 'Mapillary access token'). "
+            "Note: Mapillary answers invalid tokens with a misleading 'Service temporarily unavailable'.")
     if not token:
         raise RuntimeError(
             "MAPILLARY_TOKEN not found. Copy .env.example to .env and paste your "
@@ -234,7 +239,10 @@ if __name__ == "__main__":
                         help="Accept sequences that Mapillary marks as not captured on foot")
     args = parser.parse_args()
 
-    mly_key = load_mapillary_token()
+    try:
+        mly_key = load_mapillary_token()
+    except RuntimeError as e:
+        sys.exit(f"ERROR: {e}")
 
     output_folder = sequence_dir(args.continent, args.city)
     if (output_folder / "images").is_dir() and any((output_folder / "images").iterdir()):
@@ -243,6 +251,7 @@ if __name__ == "__main__":
     try:
         seq = args.sequence
         if args.image:
+            print(f"Looking up the sequence of image {args.image}...")
             seq = get_sequence_of_image(mly_key, args.image)
             print(f"Image {args.image} belongs to sequence {seq}")
         mapillary_retrieve(mly_key, seq, output_folder, allow_not_on_foot=args.allow_not_on_foot)
