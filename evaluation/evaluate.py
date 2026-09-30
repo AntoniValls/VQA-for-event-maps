@@ -1,6 +1,9 @@
 """
-Metrics evaluation module for VQA Pedestrian Navigation System
-Calculates F1, Accuracy, Specificity, and Recall for binary classification tasks
+Evaluates model answers against the ground truth: Accuracy, Precision, Recall, Specificity,
+F1 (overall / per level / per hazard category / per question) and the risk-score MAE (MAE_R).
+
+    python evaluation/evaluate.py                                    # all sequences, all models
+    python evaluation/evaluate.py --continent Asia --city Tokio1 --models qwen-vl
 """
 
 import argparse
@@ -17,27 +20,18 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.paths import MODELS, list_sequences, sequence_dir
-from core.promptManager import PromptManager
+from common.paths import MODELS, list_sequences, sequence_dir
+from evaluation.risk import image_risk
+from vqa.prompt_manager import PromptManager
 
 class MetricsEvaluator:
     """Evaluates VQA model predictions against ground truth labels including Risk Score Error."""
     
-    # Risk Score Configuration
-    HAZARD_CONFIG = {
-        "CRITICAL": {"weight": 1.0, "ids": ["q_construction_visible", "q_surface_hazardous", "q_pedestrian_not_on_sidewalk"]},
-        "HIGH":     {"weight": 0.6, "ids": ["q_crossing_nearby", "q_stairs_visible", "q_obstacle_blocking"]},
-        "LOW":      {"weight": 0.3, "ids": ["q_pedestrians_present", "q_vehicle_nearby"]}
-    }
-    SAFETY_REWARD_RATIO = 1/8
-
     def __init__(self, predictions_path: str, ground_truth_path: str):
         self.predictions_path = predictions_path
         self.ground_truth_path = ground_truth_path
         self.predictions = []
         self.ground_truth = []
-        # Map IDs to weights for risk calculation
-        self.weight_lookup = {qid: cfg["weight"] for cfg in self.HAZARD_CONFIG.values() for qid in cfg["ids"]}
         
     def load_data(self) -> Tuple[List[Dict], List[Dict]]:
         def parse_mixed_json(path):
@@ -56,33 +50,6 @@ class MetricsEvaluator:
         self.prompt_manager = PromptManager(preset="full_hierarchical")
         return self.predictions, self.ground_truth
     
-    def calculate_risk_score(self, questions_dict: Dict) -> float:
-        """Calculates a normalized risk score [0, 1] for a set of answers for one image."""
-        primary_ids = list(self.weight_lookup.keys())
-        active_weights = [self.weight_lookup.get(qid, 0) for qid in primary_ids if qid in questions_dict]
-        max_theoretical = sum(active_weights)
-        
-        if max_theoretical <= 0:
-            return 0.0
-
-        net_score = 0.0
-        for q_id in primary_ids:
-            if q_id not in questions_dict:
-                continue
-
-            ans = questions_dict[q_id].get('answer', '').lower().strip().translate(str.maketrans('', '', string.punctuation))
-            weight = self.weight_lookup.get(q_id, 0)
-            
-            is_yes = any(pos in ans for pos in ['yes', 'true', 'hazard'])
-            is_no = any(neg in ans for neg in ['no', 'false', 'safe'])
-            
-            if is_yes:
-                net_score += weight
-            elif is_no:
-                net_score -= (weight * self.SAFETY_REWARD_RATIO)
-
-        return min(max(0, net_score) / max_theoretical, 1.0)
-
     def normalize_yes_no(self, answer: str) -> str:
         if not isinstance(answer, str): return "no"
         a = answer.strip().lower()
@@ -144,8 +111,8 @@ class MetricsEvaluator:
         risk_errors = []
         for img_name in img_gt_map:
             if img_name in img_pred_map:
-                gt_risk = self.calculate_risk_score(img_gt_map[img_name])
-                pred_risk = self.calculate_risk_score(img_pred_map[img_name])
+                gt_risk = image_risk(img_gt_map[img_name])
+                pred_risk = image_risk(img_pred_map[img_name])
                 risk_errors.append(abs(gt_risk - pred_risk))
         
         avg_risk_error = sum(risk_errors) / len(risk_errors) if risk_errors else 0
@@ -395,8 +362,6 @@ def save_summary_csv(results: Dict, csv_path: str):
 
 if __name__ == "__main__":
     # Re-evaluates existing model answers against the GT (no model is run).
-    #   python core/eval.py                                  -> all sequences, all models
-    #   python core/eval.py --continent Asia --city Tokio1 --models qwen-vl
     parser = argparse.ArgumentParser(description="Evaluate model answers against the ground truth")
     parser.add_argument("--continent", help="Only this continent (default: all)")
     parser.add_argument("--city", help="Only this sequence folder (default: all)")

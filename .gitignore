@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-viz/generate_paper_figures.py
+evaluation/generate_paper_figures.py
 cache/
 
 # Dataset: never in git. It is distributed as a .tar.gz (see README, "The dataset")
@@ -22,7 +22,7 @@ data/
 *.csv
 *.html
 *.json
-!inout/*.json
+!vqa/*.json
 
 # Archives
 *.tar.gz

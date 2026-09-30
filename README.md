@@ -31,29 +31,31 @@ Four VQA models are benchmarked against a manually annotated dataset of **20 cit
 
 ## 1. Repository layout
 
+The code is organized by pipeline stage:
+
 ```
 VQA-for-event-maps/
-├── app/
-│   └── runner.py              # Runs the VQA models over the sequences (+ evaluation)
-├── core/
+├── dataset/                   # 1. BUILDING THE DATASET (no GPU needed)
+│   ├── download_mapillary.py  #    Downloads a Mapillary sequence (images + metadata.json)
+│   ├── export_svo.py          #    Extracts frames from ZED .svo2 recordings (Barcelona data)
+│   ├── label_gt.py            #    Keyframe selection + manual ground-truth labeling (OpenCV GUI)
+│   ├── review_gt.py           #    Web tool to review GT where most models disagree (Flask)
+│   ├── merge_gt.py            #    Merges all GT files into data/all_GT/all_ground_truth.jsonl
+│   └── pack_data.sh           #    Creates the dataset / per-sequence .tar.gz archives
+├── vqa/                       # 2. ASKING THE MODELS
+│   ├── prompts.json           #    THE QUESTION HIERARCHY (questions, dependencies, presets)
+│   ├── prompt_manager.py      #    Loads the hierarchy and resolves follow-up questions
+│   ├── prompt_utils.py        #    CLI to inspect presets / questions
+│   ├── models.py              #    Wrapper around ViLT / LLaVA / InstructBLIP / Qwen-VL
+│   └── run.py                 #    Runs the models over the sequences -> answers.jsonl
+├── evaluation/                # 3. EVALUATING AND MAPPING
+│   ├── risk.py                #    Risk score R_img and risk categories (single definition)
+│   ├── evaluate.py            #    Metrics (Acc, F1, Prec, Rec, Spec) + risk-score MAE
+│   ├── compare_models.py      #    Aggregates metrics across cities/models (paper tables/figures)
+│   └── event_map.py           #    Interactive risk event maps (folium + OpenStreetMap)
+├── common/
 │   ├── paths.py               # Where things are: repo root, data folder, prompts, .env settings
-│   ├── mapillaryRetrieve.py   # Downloads a Mapillary sequence (images + GPS + metadata)
-│   ├── gt_maker.py            # Keyframe selection + manual ground-truth labeling (OpenCV GUI)
-│   ├── gt_corrector.py        # Web tool to review GT where most models disagree (Flask)
-│   ├── vqaModel.py            # Wrapper around ViLT / LLaVA / InstructBLIP / Qwen-VL
-│   ├── promptManager.py       # Loads the question hierarchy and resolves follow-ups
-│   └── eval.py                # Metrics (Acc, F1, Prec, Rec, Spec) + risk-score MAE
-├── inout/
-│   ├── vqa_prompts.json       # THE QUESTION HIERARCHY (questions, dependencies, presets)
-│   ├── svoExport.py           # Extracts frames from ZED .svo2 recordings (Barcelona data)
-│   └── utils.py               # Progress bar, misc
-├── utils/
-│   ├── pack_data.sh           # Creates the dataset / per-sequence .tar.gz archives
-│   ├── unify_gt.py            # Merges all GT files into data/all_GT/all_ground_truth.jsonl
-│   ├── model_comparison.py    # Aggregates metrics across cities/models, makes figures
-│   └── prompt_utils.py        # CLI to inspect presets / questions
-├── viz/
-│   └── viz_utils.py           # Risk score per image + interactive risk event map (folium + OSM)
+│   └── utils.py               # Progress bar
 ├── data/                      # The dataset. NOT in git, see §3
 ├── .env.example               # Template for your settings -> copy to .env
 └── requirements.txt
@@ -61,7 +63,7 @@ VQA-for-event-maps/
 
 **Git contains only code. The dataset is distributed as `.tar.gz` archives** (§3).
 
-All scripts have a command-line interface (`--help`) and can be run from any directory, for example `python core/gt_maker.py --continent Asia --city Hanoi`.
+All scripts have a command-line interface (`--help`) and can be run from any directory, for example `python dataset/label_gt.py --continent Asia --city Hanoi`.
 
 ---
 
@@ -142,8 +144,8 @@ tar -xzf VQA-dataset-<date>.tar.gz          # creates/fills ./data/
 Only the maintainer publishes new dataset versions:
 
 ```bash
-utils/pack_data.sh dataset      # -> VQA-dataset-YYYY-MM-DD.tar.gz  (excludes the raw .svo2)
-utils/pack_data.sh svo          # -> VQA-raw-svo.tar.gz
+dataset/pack_data.sh dataset      # -> VQA-dataset-YYYY-MM-DD.tar.gz  (excludes the raw .svo2)
+dataset/pack_data.sh svo          # -> VQA-raw-svo.tar.gz
 ```
 
 ### Folder structure
@@ -153,10 +155,9 @@ data/
 ├── <Continent>/<Sequence>/
 │   ├── images/                     # all downloaded frames (0000_<mapillaryImageId>.jpg ...)
 │   ├── images_selected/            # the 20 keyframes chosen for annotation (copies)
-│   ├── gps_positions.csv           # filename, latitude, longitude, captured_at, compass_angle, is_pano, image_type, position_source
-│   ├── metadata.json               # full Mapillary metadata per image (camera, size, sequence id, ...)
+│   ├── metadata.json               # one entry per image: filename, latitude, longitude, compass, camera, sequence id, ...
 │   ├── ground_truth_labels.jsonl   # manual labels (one line per image x question)
-│   ├── ground_truth_labels.jsonl.bak   # automatic backup made by gt_corrector.py
+│   ├── ground_truth_labels.jsonl.bak   # automatic backup made by dataset/review_gt.py
 │   ├── interactive_map_gt.html     # risk event map from GT (optional)
 │   └── results/<model>/
 │       ├── answers.jsonl           # model answers (same structure as GT)
@@ -165,15 +166,16 @@ data/
 │       ├── answer_characteristics.txt  # yes/no balance of predictions vs GT
 │       └── interactive_map.html    # risk event map from this model (optional)
 ├── Europe/Barcelona/               # IRI_sequences_GT.txt (planned routes) + svo/ (raw recordings)
-├── all_GT/all_ground_truth.jsonl   # all GT merged (utils/unify_gt.py)
-└── model_comparison/               # paper figures (utils/model_comparison.py)
+├── all_GT/all_ground_truth.jsonl   # all GT merged (dataset/merge_gt.py)
+└── model_comparison/               # paper figures (evaluation/compare_models.py)
 ```
 
 `<Continent>` is one of `Africa`, `America`, `Asia`, `Europe`, `Oceania` (North and South America share `America`).
 
-Sequences downloaded before September 2026 use the **original** device GPS (`geometry`) and have no `position_source` column. Newer downloads use the computed geometry (§5.3). Some older sequences also contain a `gps_positions.json` from an earlier version of the download script. It is not used.
+`metadata.json` is the **only** per-image metadata file (positions included): there are no separate GPS files.
+Sequences downloaded before September 2026 use the **original** device GPS (`geometry`) and have no `position_source` field. Newer downloads use the computed geometry (§5.3).
 
-A folder counts as an **annotated sequence** (and is picked up automatically by the runner and the evaluation) as soon as it contains `ground_truth_labels.jsonl`.
+A folder counts as an **annotated sequence** (and is picked up automatically by `vqa/run.py` and the evaluation) as soon as it contains `ground_truth_labels.jsonl`.
 
 ### Current content
 
@@ -209,7 +211,7 @@ Model answers (`results/<model>/answers.jsonl`) have the same keys plus `model` 
 
 ### The question hierarchy
 
-Defined in [`inout/vqa_prompts.json`](inout/vqa_prompts.json). Every question is prefixed with the base context:
+Defined in [`vqa/prompts.json`](vqa/prompts.json). Every question is prefixed with the base context:
 
 > *"You are an expert at detecting pedestrian obstacles for people with low vision. Answer only with Yes or No."*
 
@@ -283,31 +285,32 @@ q_surface_hazardous
 └── q_surface_cracks_holes          Is the pavement visibly damaged (large cracks, holes, or broken sections)?
 ```
 
-Print it yourself with `python utils/prompt_utils.py list-questions --preset full_hierarchical`.
+Print it yourself with `python vqa/prompt_utils.py list-questions --preset full_hierarchical`.
 </details>
 
-> ⚠️ Do **not** change question IDs or texts in `vqa_prompts.json` while the dataset is being extended: all GT files and model answers are matched by `question_id`, and the paper numbers depend on the current wording.
+> ⚠️ Do **not** change question IDs or texts in `vqa/prompts.json` while the dataset is being extended: all GT files and model answers are matched by `question_id`, and the paper numbers depend on the current wording.
 
 ---
 
 ## 4. Pipeline overview
 
 ```
- (1) Download sequence        core/mapillaryRetrieve.py      -> images/, gps_positions.csv, metadata.json
-            │                 (or inout/svoExport.py for ZED recordings)
+ (1) Download sequence        dataset/download_mapillary.py  -> images/, metadata.json
+            │                 (or dataset/export_svo.py for ZED recordings)
             ▼
- (2) Select 20 keyframes      core/gt_maker.py               -> images_selected/
+ (2) Select 20 keyframes      dataset/label_gt.py            -> images_selected/
      + label ground truth                                    -> ground_truth_labels.jsonl
             ▼
- (3) Run VQA models           app/runner.py                  -> results/<model>/answers.jsonl
-     + evaluate               (calls core/eval.py)           -> results/<model>/metrics*.{json,csv}
+ (3) Run VQA models           vqa/run.py                     -> results/<model>/answers.jsonl
             ▼
- (4) Review suspicious GT     core/gt_corrector.py           -> fixes ground_truth_labels.jsonl
+ (4) Evaluate                 evaluation/evaluate.py         -> results/<model>/metrics*.{json,csv}
             ▼
- (5) Aggregate                utils/unify_gt.py, utils/model_comparison.py, viz/viz_utils.py
+ (5) Review suspicious GT     dataset/review_gt.py           -> fixes ground_truth_labels.jsonl
+            ▼
+ (6) Aggregate                dataset/merge_gt.py, evaluation/compare_models.py, evaluation/event_map.py
 ```
 
-Steps (1) and (2) need no GPU. Step (3) needs the models.
+Steps (1), (2) and (4)–(6) need no GPU. Only step (3) needs the models.
 
 ---
 
@@ -344,7 +347,7 @@ The `sequence` value (a ~22-character string) is the sequence ID. `camera_type` 
 ### 5.3 Download it
 
 ```bash
-python core/mapillaryRetrieve.py --continent Asia --city Hanoi --sequence AbCdEf1234567890xyz
+python dataset/download_mapillary.py --continent Asia --city Hanoi --sequence AbCdEf1234567890xyz
 ```
 
 Folder name (`--city`) convention: `CamelCase`, no spaces or accents, city name in English. If a city gets a second sequence, number them (`Tokio1`, `Tokio2`). The script refuses to overwrite a folder that already has images.
@@ -354,7 +357,7 @@ What it does:
 - Lists all image IDs of the sequence. If the sequence is 360°, it stops without downloading anything.
 - Keeps **every second image, up to 601 images**, and downloads the 2048 px version of each one to `data/<Continent>/<City>/images/0000_<imageId>.jpg`, `0001_...` (the prefix keeps the temporal order). Any isolated 360° image in the sequence is skipped.
 - Uses Mapillary's **computed** position and heading (`computed_geometry`, `computed_compass_angle`: refined by Mapillary's 3D reconstruction). For images Mapillary hasn't processed yet, it falls back to the raw device GPS/compass (`geometry`, `compass_angle`). The `position_source` column says which one was used (`computed` / `original`).
-- Writes `metadata.json` (all fields, including both computed and original positions) and `gps_positions.csv` (used by the event maps).
+- Writes `metadata.json`: one entry per image with its position (both computed and original are kept), heading, camera and size. The event maps read the positions from it.
 
 Then open the `images/` folder and check the result. If the sequence turns out to be bad, delete the folder and pick another one.
 
@@ -363,7 +366,7 @@ Then open the `images/` folder and check the result. If the sequence turns out t
 Labeling uses an OpenCV window, so you need a desktop session (it won't work over plain SSH).
 
 ```bash
-python core/gt_maker.py --continent Asia --city Hanoi
+python dataset/label_gt.py --continent Asia --city Hanoi
 ```
 
 #### Step A: keyframe selection
@@ -417,7 +420,7 @@ Answer only what is **visible in the image**, not what you know about the place.
 To re-ask specific Level-1 questions for all images of a sequence:
 
 ```bash
-python core/gt_maker.py --continent Asia --city Hanoi --patch q_stairs_visible q_surface_hazardous
+python dataset/label_gt.py --continent Asia --city Hanoi --patch q_stairs_visible q_surface_hazardous
 ```
 
 This deletes the answers to those questions **and their follow-ups** for every image, then asks them again.
@@ -427,7 +430,7 @@ This deletes the answers to those questions **and their follow-ups** for every i
 ### 5.5 Check it
 
 ```bash
-python utils/prompt_utils.py stats        # sanity check of the hierarchy
+python vqa/prompt_utils.py stats        # sanity check of the hierarchy
 wc -l data/Asia/Hanoi/ground_truth_labels.jsonl   # ~300–550 lines for 20 images
 ls data/Asia/Hanoi/images_selected | wc -l        # must be 20
 ```
@@ -437,7 +440,7 @@ ls data/Asia/Hanoi/images_selected | wc -l        # must be 20
 Data never goes through git. Pack the sequence and send the archive to Antoni (shared drive):
 
 ```bash
-utils/pack_data.sh sequence Asia Hanoi      # -> Asia_Hanoi.tar.gz
+dataset/pack_data.sh sequence Asia Hanoi      # -> Asia_Hanoi.tar.gz
 ```
 
 Tell Antoni the Mapillary sequence ID, the city, and anything special about the sequence. Antoni extracts it at the repository root (`tar -xzf Asia_Hanoi.tar.gz`), runs the models (§7) and the GT review (§5.7), and publishes a new dataset version.
@@ -446,10 +449,10 @@ Code changes (bug fixes, new tools) go through git as usual, on a branch and via
 
 ### 5.7 Review the GT against the models (after the models have run)
 
-[`core/gt_corrector.py`](core/gt_corrector.py) is a small web app that shows only the GT answers where **at least 3 of the 4 models disagree** with the annotator. Most are model errors, but it catches annotation mistakes quickly.
+[`dataset/review_gt.py`](dataset/review_gt.py) is a small web app that shows only the GT answers where **at least 3 of the 4 models disagree** with the annotator. Most are model errors, but it catches annotation mistakes quickly.
 
 ```bash
-python core/gt_corrector.py --continent Asia --city Hanoi     # open http://localhost:5000
+python dataset/review_gt.py --continent Asia --city Hanoi     # open http://localhost:5000
 ```
 
 | Key | Action |
@@ -457,7 +460,7 @@ python core/gt_corrector.py --continent Asia --city Hanoi     # open http://loca
 | `↑` / `↓` | Set GT to Yes / No (saved immediately) |
 | `←` / `→` | Previous / next flagged item |
 
-The first change creates `ground_truth_labels.jsonl.bak` with the original file. Only correct the GT when the annotator was clearly wrong, not because the models say so. Afterwards, re-evaluate (`python core/eval.py --continent Asia --city Hanoi`) and rebuild the merged GT (`python utils/unify_gt.py`).
+The first change creates `ground_truth_labels.jsonl.bak` with the original file. Only correct the GT when the annotator was clearly wrong, not because the models say so. Afterwards, re-evaluate (`python evaluation/evaluate.py --continent Asia --city Hanoi`) and rebuild the merged GT (`python dataset/merge_gt.py`).
 
 ---
 
@@ -465,9 +468,9 @@ The first change creates `ground_truth_labels.jsonl.bak` with the original file.
 
 The Barcelona sequences `data/Europe/00` … `22` were recorded around IRI with a ZED stereo camera mounted on Biel Glasses smart glasses (raw `.svo2` files in `data/Europe/Barcelona/svo/`, distributed separately as `VQA-raw-svo.tar.gz`).
 
-- [`inout/svoExport.py`](inout/svoExport.py) extracts ~100 evenly spaced left-camera frames per recording to `data/Europe/<seq>/images/*.png`. It needs the ZED SDK and its `pyzed` Python wheel (not in `requirements.txt`).
+- [`dataset/export_svo.py`](dataset/export_svo.py) extracts ~100 evenly spaced left-camera frames per recording to `data/Europe/<seq>/images/*.png`. It needs the ZED SDK and its `pyzed` Python wheel (not in `requirements.txt`).
 - `data/Europe/Barcelona/IRI_sequences_GT.txt` contains the planned route of each recording (GPS track points).
-- Most Barcelona sequences have **no per-frame GPS** (`gps_positions.csv` only exists for `08`), so event maps can't be generated for them.
+- Most Barcelona sequences have **no per-frame GPS** (only `08` has positions in its `metadata.json`), so event maps can't be generated for them.
 
 From step (2) on, the pipeline is the same as for Mapillary.
 
@@ -475,17 +478,18 @@ From step (2) on, the pipeline is the same as for Mapillary.
 
 ## 7. Running the VQA models
 
-[`app/runner.py`](app/runner.py) processes every annotated sequence found in the data folder. For each model and sequence it:
+[`vqa/run.py`](vqa/run.py) processes every annotated sequence found in the data folder. For each model and sequence it:
 
 1. Loads the 20 keyframes from `images_selected/`.
 2. Asks the 8 Level-1 questions, then the follow-ups of every *yes* answer (Level 2 and then Level 3), with the base context prepended.
 3. Writes `results/<model>/answers.jsonl` (**overwritten** on each run).
-4. Evaluates against `ground_truth_labels.jsonl` (see §8).
+
+It only runs the models. Evaluation (§8) and event maps (§9) are separate steps that read `answers.jsonl`, so they can be re-run any time without the GPU.
 
 ```bash
-python app/runner.py                                        # all sequences, all 4 models
-python app/runner.py --models qwen-vl --continent Asia --city Hanoi
-python app/runner.py --models vilt llava --continent Europe --map   # + event maps
+python vqa/run.py                                        # all sequences, all 4 models
+python vqa/run.py --models qwen-vl --continent Asia --city Hanoi
+python evaluation/evaluate.py --continent Asia --city Hanoi --models qwen-vl   # then evaluate
 ```
 
 Each model is loaded once and reused for all sequences. An error on one sequence is reported at the end and doesn't stop the others.
@@ -496,11 +500,11 @@ Answers of generative models are free text. Anything starting with "yes" counts 
 
 ## 8. Evaluation and risk score
 
-[`core/eval.py`](core/eval.py) matches predictions and GT on `(image_name, question_id)` and computes accuracy, precision, recall, specificity and F1 overall, per level, per topic (Level-1 hazard category) and per question. Levels and topics are derived from the hierarchy in `vqa_prompts.json`.
+[`evaluation/evaluate.py`](evaluation/evaluate.py) matches predictions and GT on `(image_name, question_id)` and computes accuracy, precision, recall, specificity and F1 overall, per level, per topic (Level-1 hazard category) and per question. Levels and topics are derived from the hierarchy in `vqa/prompts.json`.
 
 ```bash
-python core/eval.py                                   # re-evaluate everything (no model is run)
-python core/eval.py --continent Asia --city Hanoi --models qwen-vl
+python evaluation/evaluate.py                                   # re-evaluate everything (no model is run)
+python evaluation/evaluate.py --continent Asia --city Hanoi --models qwen-vl
 ```
 
 - **Level-2/3 questions are evaluated only where the GT has an answer**, i.e. where the annotator said *yes* to the parent. Follow-ups triggered by a model false positive have no GT and are ignored (see paper §IV-B).
@@ -511,31 +515,31 @@ For each image, over the 8 Level-1 questions $Q$:
 
 $$R_{img} = \frac{\max\left(0, \sum_{i \in Q} w_i x_i\right)}{\sum_{i \in Q} w_i}, \qquad x_i = \begin{cases} 1 & \text{Yes} \\ -1/|Q| & \text{No} \\ 0 & \text{unanswered} \end{cases}$$
 
-with $w_i$ = 1.0 (Construction, Surface, Non-Sidewalk), 0.6 (Crossings, Stairs, Obstacles), 0.3 (Crowding, Vehicles). In code this is `HAZARD_CONFIG` and `SAFETY_REWARD_RATIO = 1/8`, in both `core/eval.py` and `viz/viz_utils.py`. Keep the two in sync.
+with $w_i$ = 1.0 (Construction, Surface, Non-Sidewalk), 0.6 (Crossings, Stairs, Obstacles), 0.3 (Crowding, Vehicles). All of this is defined once in [`evaluation/risk.py`](evaluation/risk.py) (`HAZARD_CONFIG`, `SAFETY_REWARD_RATIO = 1/8`, thresholds), used by both the evaluation and the event maps.
 
 - **Segment risk** = max of the image risks mapped to that OSM street segment.
 - **Categories**: Safe ≤ 0.15 < Caution < 0.4 ≤ Danger < 0.7 ≤ High Risk.
 - **MAE_R** = mean |R_gt − R_pred| over images (`Risk_MAE` in the outputs).
 
 Per-sequence outputs: `metrics.json`, `metrics_summary.csv`, `answer_characteristics.txt` in `results/<model>/`.
-Cross-sequence tables and figures (paper Tables I–III): `python utils/model_comparison.py` → `data/model_comparison/`.
+Cross-sequence tables and figures (paper Tables I–III): `python evaluation/compare_models.py` → `data/model_comparison/`.
 
 ---
 
 ## 9. Event maps
 
-[`viz/viz_utils.py`](viz/viz_utils.py) builds interactive HTML maps (folium, CartoDB tiles):
+[`evaluation/event_map.py`](evaluation/event_map.py) builds interactive HTML maps (folium, CartoDB tiles):
 
 - The OSM *drive* network within 1 km of the sequence centre is downloaded with `osmnx` (internet needed).
 - Each annotated keyframe is snapped to its nearest street segment, and segments are coloured by their max risk.
 - Grey segments have no observations. The dashed blue line is the full GPS track, and markers show the keyframes with their answers.
 
 ```bash
-python viz/viz_utils.py --continent America --city NewYork --model qwen-vl
+python evaluation/event_map.py --continent America --city NewYork --model qwen-vl
 # -> results/qwen-vl/interactive_map.html (model) and interactive_map_gt.html (GT)
 ```
 
-It requires `gps_positions.csv`, whose `filename` column must match the names in `images_selected/`.
+Positions are read from the sequence `metadata.json` (its `filename` entries must match the names in `images_selected/`).
 
 ---
 
@@ -543,20 +547,20 @@ It requires `gps_positions.csv`, whose `filename` column must match the names in
 
 | Command | What it does |
 |---|---|
-| `python utils/prompt_utils.py list-presets` | List question presets (`full_hierarchical`, `level_1_only`, `crossing`, ...) |
-| `python utils/prompt_utils.py list-questions --preset crossing` | List the questions of a preset |
-| `python utils/prompt_utils.py stats` | Question counts |
-| `python utils/unify_gt.py` | Merge all GT files into `data/all_GT/all_ground_truth.jsonl` |
-| `python utils/model_comparison.py` | Global / per-continent / per-topic comparison tables and plots |
-| `utils/pack_data.sh dataset \| sequence <Continent> <City> \| svo` | Create the data archives (§3) |
+| `python vqa/prompt_utils.py list-presets` | List question presets (`full_hierarchical`, `level_1_only`, `crossing`, ...) |
+| `python vqa/prompt_utils.py list-questions --preset crossing` | List the questions of a preset |
+| `python vqa/prompt_utils.py stats` | Question counts |
+| `python dataset/merge_gt.py` | Merge all GT files into `data/all_GT/all_ground_truth.jsonl` |
+| `python evaluation/compare_models.py` | Global / per-continent / per-topic comparison tables and plots |
+| `dataset/pack_data.sh dataset \| sequence <Continent> <City> \| svo` | Create the data archives (§3) |
 
 ---
 
 ## 11. Gotchas
 
-- **`images_selected/` must contain exactly 20 images**, otherwise `gt_maker.py` opens the selection again.
+- **`images_selected/` must contain exactly 20 images**, otherwise `label_gt.py` opens the selection again.
 - **Quitting (`Q`) during labeling loses the image in progress**, but finished images are saved.
-- `runner.py` **overwrites** `results/<model>/answers.jsonl` for the sequences it processes.
+- `vqa/run.py` **overwrites** `results/<model>/answers.jsonl` for the sequences it processes.
 - Never commit `.env`, data, or archives. `.gitignore` blocks them, but check `git status` anyway.
 - Mapillary images are licensed CC BY-SA 4.0. Keep `metadata.json` (image IDs) so the source can be attributed.
 

@@ -18,8 +18,8 @@ from PIL import Image
 from datetime import datetime
 import shutil
 
-from core.paths import record_path, sequence_dir
-from core.promptManager import PromptManager
+from common.paths import record_path, sequence_dir
+from vqa.prompt_manager import PromptManager
 
 def select_keyframes_interactively_strided(
     image_files,
@@ -645,8 +645,8 @@ def create_ground_truth_labels(
     return 0
 
 if __name__ == "__main__":
-    #   python core/gt_maker.py --continent Asia --city Hanoi
-    #   python core/gt_maker.py --continent Asia --city Hanoi --patch q_stairs_visible q_surface_hazardous
+    #   python dataset/label_gt.py --continent Asia --city Hanoi
+    #   python dataset/label_gt.py --continent Asia --city Hanoi --patch q_stairs_visible q_surface_hazardous
     #
     #   --override   --patch     Behavior
     #   no           no          Normal incremental labeling (resumes where you left it)

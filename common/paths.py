@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
-PROMPTS_PATH = ROOT / "inout" / "vqa_prompts.json"
+PROMPTS_PATH = ROOT / "vqa" / "prompts.json"
 
 CONTINENTS = ["Africa", "America", "Asia", "Europe", "Oceania"]
 MODELS = ["qwen-vl", "llava", "instructblip", "vilt"]

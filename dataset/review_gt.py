@@ -1,7 +1,7 @@
 """
 Web tool to review the ground truth where most models disagree with the annotator.
 
-    python core/gt_corrector.py --continent Africa --city Lusaka     # then open http://localhost:5000
+    python dataset/review_gt.py --continent Africa --city Lusaka     # then open http://localhost:5000
 """
 import argparse
 import json
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.paths import MODELS, sequence_dir
+from common.paths import MODELS, sequence_dir
 
 app = Flask(__name__)
 

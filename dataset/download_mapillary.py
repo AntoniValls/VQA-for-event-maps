@@ -1,8 +1,8 @@
 """
-Downloads a Mapillary sequence into data/<Continent>/<City>/ (images/, metadata.json, gps_positions.csv).
+Downloads a Mapillary sequence into data/<Continent>/<City>/ (images/ + metadata.json with the per-image positions).
 360° sequences are rejected. Positions use Mapillary's computed (SfM-refined) geometry when available.
 
-    python core/mapillaryRetrieve.py --continent Asia --city Hanoi --sequence <SEQUENCE_ID>
+    python dataset/download_mapillary.py --continent Asia --city Hanoi --sequence <SEQUENCE_ID>
 """
 import argparse
 import sys
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.paths import CONTINENTS, get_setting, sequence_dir
+from common.paths import CONTINENTS, get_setting, sequence_dir
 
 # 360° imagery is not accepted: only regular (perspective / fisheye) cameras.
 PANORAMIC_CAMERA_TYPES = {"spherical", "equirectangular"}
@@ -137,21 +137,13 @@ def mapillary_retrieve(mly_key, seq, output_folder, max_images=601):
     # Step 3: Save metadata
     print("\nSaving metadata...")
 
-    # Save complete metadata
+    # Save complete metadata (the only per-sequence metadata file; also used by the event maps)
     with open(output_folder / 'metadata.json', 'w') as f:
         json.dump(metadata, f, indent=2)
-
-    # Create a simple CSV (used by the event maps)
-    with open(output_folder / 'gps_positions.csv', 'w') as f:
-        f.write('filename,latitude,longitude,captured_at,compass_angle,is_pano,image_type,position_source\n')
-        for item in metadata:
-            f.write(f"{item['filename']},{item['latitude']},{item['longitude']},{item['captured_at']},"
-                    f"{item['compass_angle']},{item['is_pano']},{item['image_type']},{item['position_source']}\n")
 
     print(f"\nDownload complete!")
     print(f"Images saved to: {images_folder}")
     print(f"Metadata saved to: {output_folder / 'metadata.json'}")
-    print(f"CSV saved to: {output_folder / 'gps_positions.csv'}")
 
     # Print summary
     n_computed = sum(1 for item in metadata if item['position_source'] == 'computed')

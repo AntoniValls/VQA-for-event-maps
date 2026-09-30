@@ -2,9 +2,9 @@
 # Packs the dataset into .tar.gz archives whose paths start with data/,
 # so they can always be extracted with `tar -xzf <archive>` at the repository root.
 #
-#   utils/pack_data.sh dataset               -> VQA-dataset-<date>.tar.gz  (everything except raw .svo2 recordings)
-#   utils/pack_data.sh sequence Asia Hanoi   -> Asia_Hanoi.tar.gz          (one sequence, to hand in new data)
-#   utils/pack_data.sh svo                   -> VQA-raw-svo.tar.gz         (raw ZED recordings of Barcelona)
+#   dataset/pack_data.sh dataset               -> VQA-dataset-<date>.tar.gz  (everything except raw .svo2 recordings)
+#   dataset/pack_data.sh sequence Asia Hanoi   -> Asia_Hanoi.tar.gz          (one sequence, to hand in new data)
+#   dataset/pack_data.sh svo                   -> VQA-raw-svo.tar.gz         (raw ZED recordings of Barcelona)
 #
 # Archives are written to the current directory.
 set -euo pipefail

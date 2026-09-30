@@ -1,7 +1,7 @@
 import json
 from typing import Dict, List, Optional
 
-from core.paths import PROMPTS_PATH
+from common.paths import PROMPTS_PATH
 
 
 class PromptManager:
