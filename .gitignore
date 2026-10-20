@@ -5,6 +5,7 @@ cache/
 
 # Dataset: never in git. It is distributed as a .tar.gz (see README, "The dataset")
 data/
+students_data/
 
 # Credentials (keep .env.example as the template)
 .env

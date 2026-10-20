@@ -8,6 +8,8 @@ VQA_DATA_DIR (environment variable or .env file at the repository root).
 import os
 from pathlib import Path
 
+from common.sequence_info import load_info
+
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 PROMPTS_PATH = ROOT / "vqa" / "prompts.json"
@@ -37,10 +39,11 @@ def sequence_dir(continent, city):
     return DATA_DIR / continent / city
 
 
-def list_sequences(continent=None, city=None, require_gt=True):
+def list_sequences(continent=None, city=None, require_gt=True, author=None):
     """
     Discover sequences in the data folder as (continent, city) tuples.
-    Only folders with a ground_truth_labels.jsonl are returned when require_gt=True.
+    Only folders with a ground_truth_labels.jsonl are returned when require_gt=True;
+    with `author`, only those whose info.json names that author (case-insensitive).
     """
     sequences = []
     for cont in CONTINENTS:
@@ -53,6 +56,8 @@ def list_sequences(continent=None, city=None, require_gt=True):
             if city and seq.name != city:
                 continue
             if require_gt and not (seq / "ground_truth_labels.jsonl").exists():
+                continue
+            if author and str(load_info(seq).get("author", "")).lower() != author.lower():
                 continue
             sequences.append((cont, seq.name))
     return sequences

@@ -41,6 +41,8 @@ VQA-for-event-maps/
 │   ├── download_mapillary.py  #    Downloads a Mapillary sequence (images + metadata.json)
 │   ├── export_svo.py          #    Extracts frames from ZED .svo2 recordings (Barcelona data)
 │   ├── label_gt.py            #    Keyframe selection + manual ground-truth labeling (OpenCV GUI)
+│   ├── review_sequences.py    #    Web tool to review new sequences: checks, overview, label editor
+│   ├── import_submissions.py  #    Moves students' sequences into data/ and records their author
 │   ├── review_gt.py           #    Web tool to review GT where most models disagree (Flask)
 │   ├── merge_gt.py            #    Merges all GT files into data/all_GT/all_ground_truth.jsonl
 │   └── pack_data.sh           #    Creates the dataset / per-sequence .tar.gz archives
@@ -57,6 +59,7 @@ VQA-for-event-maps/
 │   └── event_map.py           #    Interactive risk event maps (folium + OpenStreetMap)
 ├── common/
 │   ├── paths.py               # Where things are: repo root, data folder, prompts, .env settings
+│   ├── sequence_info.py       # Reads/writes each sequence's info.json (author, source, ...)
 │   └── utils.py               # Progress bar
 ├── docs/
 │   └── extending-the-dataset_slides.pdf   # Onboarding slides: the paper + how to extend the dataset
@@ -95,6 +98,7 @@ Personal settings and credentials live in a `.env` file at the repository root. 
 |---|---|---|
 | `MAPILLARY_TOKEN` | Downloading Mapillary sequences | — |
 | `MAPTILER_API_KEY` | Background of the event maps (§9) | — |
+| `VQA_AUTHOR` | Your name, recorded in `info.json` of every sequence you download | — |
 | `VQA_DATA_DIR` | Keeping the dataset outside the repository | `<repo>/data` |
 
 **Getting a Mapillary token:**
@@ -163,6 +167,7 @@ data/
 │   ├── images/                     # all downloaded frames (0000_<mapillaryImageId>.jpg ...)
 │   ├── images_selected/            # the 20 keyframes chosen for annotation (copies)
 │   ├── metadata.json               # one entry per image: filename, latitude, longitude, compass, camera, sequence id, ...
+│   ├── info.json                   # who made it and where it comes from (see below)
 │   ├── ground_truth_labels.jsonl   # manual labels (one line per image x question)
 │   ├── ground_truth_labels.jsonl.bak   # automatic backup made by dataset/review_gt.py
 │   ├── interactive_map_gt.html     # risk event map from GT (optional)
@@ -184,6 +189,16 @@ Sequences downloaded before September 2026 use the **original** device GPS (`geo
 
 A folder counts as an **annotated sequence** (and is picked up automatically by `vqa/run.py` and the evaluation) as soon as it contains `ground_truth_labels.jsonl`.
 
+Every sequence has an `info.json` with its provenance:
+
+```json
+{"author": "Jorge", "source": "mapillary", "sequence_id": "FHEALmdI9kgMRIWiDN3aHw",
+ "source_url": "https://www.mapillary.com/app/?pKey=1847458835434787&focus=photo", "note": "",
+ "downloaded": "2026-10-08 19:54", "added_to_dataset": "2026-10-20", "in_paper": false}
+```
+
+`source` is `mapillary` or `biel_glasses` (self-recorded in Barcelona). `in_paper` marks the 41 sequences evaluated in the paper; everything added afterwards is `false`, so the paper's numbers can always be reproduced on exactly that subset (§8).
+
 ### Current content
 
 | Continent | Sequences | Source |
@@ -195,7 +210,11 @@ A folder counts as an **annotated sequence** (and is picked up automatically by 
 | Europe    | `00`–`22` (21 sequences, no `13`, `18`) | Self-recorded in Barcelona (Biel Glasses, ZED camera) |
 | Oceania   | `Sidney`, `Wellington` | Mapillary |
 
-Every sequence has exactly **20 annotated keyframes** and answers from the 4 models.
+These are the 41 sequences of the paper (`"in_paper": true`). Every one has exactly **20 annotated keyframes** and answers from the 4 models. Sequences added since (by students and new recordings) have `"in_paper": false`; list them with their author with:
+
+```bash
+grep -h '"author"' data/*/*/info.json | sort | uniq -c
+```
 
 ### Ground-truth file format
 
@@ -356,6 +375,8 @@ python dataset/download_mapillary.py --continent Asia --city Hanoi --sequence Ab
 python dataset/download_mapillary.py --continent Asia --city Hanoi --image 1247725302301351
 ```
 
+Add `--author <YourName>` (or set `VQA_AUTHOR` in `.env` once) and optionally `--note "..."` (camera, weather, anything special): they are saved in the sequence's `info.json` together with the sequence ID and its Mapillary link.
+
 Folder name (`--city`) convention: `CamelCase`, no spaces or accents, city name in English. If a city gets a second sequence, number them (`Tokio1`, `Tokio2`). The script refuses to overwrite a folder that already has images.
 
 What it does:
@@ -450,11 +471,46 @@ Data never goes through git. Pack the sequence and send the archive to Antoni (s
 dataset/pack_data.sh sequence Asia Hanoi      # -> Asia_Hanoi.tar.gz
 ```
 
-Tell Antoni the Mapillary sequence ID, the city, and anything special about the sequence. Antoni extracts it at the repository root (`tar -xzf Asia_Hanoi.tar.gz`), runs the models (§7) and the GT review (§5.7), and publishes a new dataset version.
+Antoni extracts it into `students_data/<YourName>/<Continent>_<City>/`, reviews it (§5.7), imports it into `data/` (§5.7), runs the models (§7) and the GT review against the models (§5.8), and publishes a new dataset version.
 
 Code changes (bug fixes, new tools) go through git as usual, on a branch and via a pull request.
 
-### 5.7 Review the GT against the models (after the models have run)
+### 5.7 Review a submission (maintainer)
+
+Extract the students' archives anywhere outside `data/` (e.g. `students_data/<Name>/`, git-ignored), then:
+
+```bash
+python dataset/review_sequences.py students_data/Jorge        # opens http://localhost:5001
+```
+
+It finds every sequence under that folder and shows:
+
+- **Overview of all sequences**: frames, keyframes, check results, review progress, and how many keyframes show each hazard (the four weak categories are marked ★).
+- **Automatic checks** per sequence:
+  - *Errors:* missing keyframes or answers, follow-ups that should or shouldn't be there, duplicates, 360° images, not captured on foot.
+  - *Warnings:* fewer than ~100 frames, keyframes not spread along the route, missing positions, very fast labelling.
+  - *Info:* keyframes with exactly the same answers as the previous one (`R` key?).
+- **Sequence page**: `source.txt`, the GPS track on a map with keyframes coloured by risk, every frame with the keyframes highlighted, and a verdict (*Approve* / *Needs work*) with a note.
+- **Keyframe page**: the image, its neighbouring frames, and the full question tree with Yes/No buttons. Every click is saved immediately: answering *No* removes that question's follow-ups, and answering *Yes* opens them (red until answered). Mark the keyframe *OK* or *Flag* it with a note. Keys: `←`/`→` navigate, `A` OK, `F` flag.
+- **Feedback report**: checks, flagged keyframes with your notes, and every correction you made, ready to copy and send to the student.
+
+What it writes in each sequence folder: `ground_truth_labels.jsonl` (your corrections; the first change makes `ground_truth_labels.jsonl.bak`), `review_log.jsonl` (every change) and `review.json` (statuses and notes).
+
+**Import into the dataset.** Then move the sequences into `data/`, recording their author:
+
+```bash
+python dataset/import_submissions.py students_data --dry-run    # see what would happen
+python dataset/import_submissions.py students_data              # every student (or students_data/Jorge for one)
+```
+
+- The author is the folder name under `students_data/` (or `--author`). It is written to `info.json`, together with the sequence ID and link (a student's `source.txt` is folded into it).
+- If `data/<Continent>/<City>` is already taken, the sequence gets the next free number (`Singapore` → `Singapore2`).
+- If the same Mapillary images are already in the dataset, the sequence is skipped.
+- Emptied student folders are removed. Review files (`review.json`, `review_log.jsonl`) travel with the sequence.
+
+Sequences you add yourself without the download script (or older ones) can be tagged with `python dataset/import_submissions.py --tag-existing <Author>`: it writes `info.json` wherever it is missing.
+
+### 5.8 Review the GT against the models (after the models have run)
 
 [`dataset/review_gt.py`](dataset/review_gt.py) is a small web app that shows only the GT answers where **at least 3 of the 4 models disagree** with the annotator. Most are model errors, but it catches annotation mistakes quickly.
 
@@ -489,12 +545,15 @@ From step (2) on, the pipeline is the same as for Mapillary.
 
 1. Loads the 20 keyframes from `images_selected/`.
 2. Asks the 8 Level-1 questions, then the follow-ups of every *yes* answer (Level 2 and then Level 3), with the base context prepended.
-3. Writes `results/<model>/answers.jsonl` (**overwritten** on each run).
+3. Writes `results/<model>/answers.jsonl`.
+
+Sequences that already have answers for a model are **skipped**, so new sequences can be run without touching the paper's results. `--overwrite` re-runs them.
 
 It only runs the models. Evaluation (§8) and event maps (§9) are separate steps that read `answers.jsonl`, so they can be re-run any time without the GPU.
 
 ```bash
-python vqa/run.py                                        # all sequences, all 4 models
+python vqa/run.py                                        # every sequence without answers yet, all 4 models
+python vqa/run.py --models qwen-vl --author Jorge        # only Jorge's sequences
 python vqa/run.py --models qwen-vl --continent Asia --city Hanoi
 python evaluation/evaluate.py --continent Asia --city Hanoi --models qwen-vl   # then evaluate
 ```
@@ -529,7 +588,7 @@ with $w_i$ = 1.0 (Construction, Surface, Non-Sidewalk), 0.6 (Crossings, Stairs, 
 - **MAE_R** = mean |R_gt − R_pred| over images (`Risk_MAE` in the outputs).
 
 Per-sequence outputs: `metrics.json`, `metrics_summary.csv`, `answer_characteristics.txt` in `results/<model>/`.
-Cross-sequence tables and figures (paper Tables I–III): `python evaluation/compare_models.py` → `data/model_comparison/`.
+Cross-sequence tables and figures (paper Tables I–III): `python evaluation/compare_models.py` → `data/model_comparison/`. By default it uses only the paper's sequences (`"in_paper": true`), so it always reproduces the paper. `--subset new` aggregates the sequences added afterwards (→ `data/model_comparison_new/`) and `--subset all` everything (→ `data/model_comparison_all/`). `evaluation/evaluate.py` also takes `--author`.
 
 ---
 
@@ -571,11 +630,13 @@ Positions are read from the sequence `metadata.json` (its `filename` entries mus
 
 | Command | What it does |
 |---|---|
+| `python dataset/review_sequences.py <folder>` | Review newly labelled sequences (§5.7) |
+| `python dataset/import_submissions.py students_data` | Move reviewed sequences into `data/` with their author (§5.7) |
 | `python vqa/prompt_utils.py list-presets` | List question presets (`full_hierarchical`, `level_1_only`, `crossing`, ...) |
 | `python vqa/prompt_utils.py list-questions --preset crossing` | List the questions of a preset |
 | `python vqa/prompt_utils.py stats` | Question counts |
 | `python dataset/merge_gt.py` | Merge all GT files into `data/all_GT/all_ground_truth.jsonl` |
-| `python evaluation/compare_models.py` | Global / per-continent / per-topic comparison tables and plots |
+| `python evaluation/compare_models.py [--subset paper\|new\|all]` | Global / per-continent / per-topic comparison tables and plots |
 | `dataset/pack_data.sh dataset \| sequence <Continent> <City> \| svo` | Create the data archives (§3) |
 
 ---
@@ -584,7 +645,7 @@ Positions are read from the sequence `metadata.json` (its `filename` entries mus
 
 - **`images_selected/` must contain exactly 20 images**, otherwise `label_gt.py` opens the selection again.
 - **Quitting (`Q`) during labeling loses the image in progress**, but finished images are saved.
-- `vqa/run.py` **overwrites** `results/<model>/answers.jsonl` for the sequences it processes.
+- `vqa/run.py` skips sequences that already have answers; `--overwrite` replaces them (careful with the paper's sequences).
 - Never commit `.env`, data, or archives. `.gitignore` blocks them, but check `git status` anyway.
 - Mapillary images are licensed CC BY-SA 4.0. Keep `metadata.json` (image IDs) so the source can be attributed.
 

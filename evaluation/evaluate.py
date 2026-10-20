@@ -366,9 +366,10 @@ if __name__ == "__main__":
     parser.add_argument("--continent", help="Only this continent (default: all)")
     parser.add_argument("--city", help="Only this sequence folder (default: all)")
     parser.add_argument("--models", nargs="+", default=MODELS, help=f"Models to evaluate (default: {' '.join(MODELS)})")
+    parser.add_argument("--author", help="Only sequences by this author (info.json), e.g. Jorge")
     args = parser.parse_args()
 
-    for continent, city in list_sequences(args.continent, args.city):
+    for continent, city in list_sequences(args.continent, args.city, author=args.author):
         for model in args.models:
             seq_dir = sequence_dir(continent, city)
             predictions_path = seq_dir / "results" / model / "answers.jsonl"

@@ -6,10 +6,12 @@ Downloads a Mapillary sequence into data/<Continent>/<City>/ (images/ + metadata
     python dataset/download_mapillary.py --continent Asia --city Hanoi --image <IMAGE_ID>   # any image of the sequence
 
 Sequences not captured on foot (e.g. from a car) are rejected unless --allow-not-on-foot is given.
+The author (--author, or VQA_AUTHOR in .env) and the source are recorded in info.json.
 The web viewer calls a sequence a "capture": the capture key is the sequence ID.
 """
 import argparse
 import sys
+from datetime import datetime
 import requests
 import json
 from pathlib import Path
@@ -23,6 +25,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from common.paths import CONTINENTS, get_setting, sequence_dir
+from common.sequence_info import build_info, save_info
 
 # 360° imagery is not accepted: only regular (perspective / fisheye) cameras.
 PANORAMIC_CAMERA_TYPES = {"spherical", "equirectangular"}
@@ -107,7 +110,7 @@ def get_sequence_image_ids(mly_key, seq):
     raise RuntimeError(f"Error fetching sequence {seq}: {detail}. "
                        "If the error is transient, just try again in a few minutes.")
 
-def mapillary_retrieve(mly_key, seq, output_folder, max_images=601, allow_not_on_foot=False):
+def mapillary_retrieve(mly_key, seq, output_folder, max_images=601, allow_not_on_foot=False, author=None, note=""):
      
     images_folder = output_folder / 'images'
 
@@ -198,9 +201,17 @@ def mapillary_retrieve(mly_key, seq, output_folder, max_images=601, allow_not_on
     with open(output_folder / 'metadata.json', 'w') as f:
         json.dump(metadata, f, indent=2)
 
+    # Provenance: who, where from, when
+    save_info(output_folder, build_info(
+        output_folder, author=author, source="mapillary", sequence_id=seq,
+        source_url=f"https://www.mapillary.com/app/?pKey={image_ids[0]}&focus=photo", note=note,
+        downloaded=datetime.now().strftime("%Y-%m-%d %H:%M"), in_paper=False))
+
     print(f"\nDownload complete!")
     print(f"Images saved to: {images_folder}")
     print(f"Metadata saved to: {output_folder / 'metadata.json'}")
+    print(f"Author and source saved to: {output_folder / 'info.json'}" + ("" if author else
+          "   (no author: add --author <YourName> or VQA_AUTHOR in .env next time)"))
 
     # Print summary
     n_computed = sum(1 for item in metadata if item['position_source'] == 'computed')
@@ -237,7 +248,12 @@ if __name__ == "__main__":
     source.add_argument("--image", help="ID of any image of the sequence (pKey=... in the viewer URL)")
     parser.add_argument("--allow-not-on-foot", action="store_true",
                         help="Accept sequences that Mapillary marks as not captured on foot")
+    parser.add_argument("--author", default=get_setting("VQA_AUTHOR"),
+                        help="Your name, saved in info.json (default: VQA_AUTHOR in .env)")
+    parser.add_argument("--note", default="", help="Optional note saved in info.json (camera, anything special...)")
     args = parser.parse_args()
+    if args.author == "YourName":            # the .env.example placeholder
+        args.author = None
 
     try:
         mly_key = load_mapillary_token()
@@ -254,6 +270,7 @@ if __name__ == "__main__":
             print(f"Looking up the sequence of image {args.image}...")
             seq = get_sequence_of_image(mly_key, args.image)
             print(f"Image {args.image} belongs to sequence {seq}")
-        mapillary_retrieve(mly_key, seq, output_folder, allow_not_on_foot=args.allow_not_on_foot)
+        mapillary_retrieve(mly_key, seq, output_folder, allow_not_on_foot=args.allow_not_on_foot,
+                           author=args.author, note=args.note)
     except RuntimeError as e:
         sys.exit(f"ERROR: {e}")

@@ -149,15 +149,22 @@ if __name__ == "__main__":
     parser.add_argument("--city", help="Only this sequence folder (default: all)")
     parser.add_argument("--preset", default="full_hierarchical", help="Question preset (default: full_hierarchical)")
     parser.add_argument("--num-keyframes", type=int, default=20)
+    parser.add_argument("--author", help="Only sequences by this author (info.json), e.g. Jorge")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Re-run sequences that already have answers for a model (default: skip them, "
+                             "so the paper's results are never overwritten by accident)")
     args = parser.parse_args()
 
-    sequences = list_sequences(args.continent, args.city)
+    sequences = list_sequences(args.continent, args.city, author=args.author)
     if not sequences:
         sys.exit("No annotated sequences found (need data/<Continent>/<City>/ground_truth_labels.jsonl)")
 
-    errors = []
+    errors, skipped = [], []
     for model in args.models:
         for continent, city in sequences:
+            if not args.overwrite and (sequence_dir(continent, city) / "results" / model / "answers.jsonl").exists():
+                skipped.append(f"{model} | {continent}/{city}")
+                continue
             print(f"{'='*70}\nVQA Pedestrian Navigation System - Hierarchical Mode")
             print(f"Model: {model} | Preset: {args.preset} | {continent}/{city}\n{'='*70}")
             try:
@@ -166,6 +173,8 @@ if __name__ == "__main__":
                 errors.append(f"ERROR: --- {model} | {continent}/{city}: {e}")
                 print(errors[-1])
 
+    if skipped:
+        print(f"\nSkipped {len(skipped)} model/sequence pairs that already have answers (use --overwrite to re-run them).")
     if errors:
         print("\nThese are the errors we got:")
         for error in errors:

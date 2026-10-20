@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
 Compare VQA model metrics across result folders, including Topic and Risk Score analysis.
+
+    python evaluation/compare_models.py                  # the paper's sequences -> data/model_comparison/
+    python evaluation/compare_models.py --subset new     # sequences added after the paper -> data/model_comparison_new/
+    python evaluation/compare_models.py --subset all     # everything -> data/model_comparison_all/
 """
 
+import argparse
 import os
 import sys
 import json
@@ -16,10 +21,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from common.paths import DATA_DIR
+from common.sequence_info import load_info
+
+parser = argparse.ArgumentParser(description="Aggregate metrics across sequences and models (paper tables and figures)")
+parser.add_argument("--subset", choices=["paper", "new", "all"], default="paper",
+                    help="paper: sequences evaluated in the paper (default); new: added afterwards; all: both")
+ARGS = parser.parse_args()
 
 # ================= CONFIG =================
 BASE_RESULTS_DIR = DATA_DIR
-OUTPUT_DIR = DATA_DIR / "model_comparison"
+OUTPUT_DIR = DATA_DIR / ("model_comparison" if ARGS.subset == "paper" else f"model_comparison_{ARGS.subset}")
 # Added Risk_MAE to the main metrics list
 METRICS = ["Accuracy", "F1", "Precision", "Recall", "Specificity", "Risk_MAE"]
 # ==========================================
@@ -37,6 +48,9 @@ def collect_results(base_dir):
     for csv_path in csv_files:
         root = csv_path.parent
         model_name = root.name
+        in_paper = bool(load_info(root.parents[1]).get("in_paper"))     # <seq>/results/<model>/
+        if (ARGS.subset == "paper" and not in_paper) or (ARGS.subset == "new" and in_paper):
+            continue
         
         # <DATA_DIR>/<Continent>/<City>/results/<model>/metrics_summary.csv
         try:
@@ -67,7 +81,7 @@ def collect_results(base_dir):
 df_all, df_topics = collect_results(BASE_RESULTS_DIR)
 
 if df_all.empty:
-    raise RuntimeError("No data collected. Check your directory structure.")
+    raise SystemExit(f"No metrics for the '{ARGS.subset}' sequences yet. Run vqa/run.py and evaluation/evaluate.py on them first.")
 
 # Ensure numeric types for aggregation
 for m in METRICS:
