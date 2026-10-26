@@ -2,10 +2,13 @@
 import torch
 from typing import Optional, Tuple
 from PIL import Image
-from transformers import (AutoProcessor, AutoModelForVision2Seq, Qwen2VLForConditionalGeneration, Qwen3VLForConditionalGeneration, ViltProcessor, ViltForQuestionAnswering,
+import re
+
+from transformers import (AutoProcessor, Qwen2VLForConditionalGeneration, Qwen3VLForConditionalGeneration, ViltProcessor, ViltForQuestionAnswering,
                          InstructBlipProcessor, InstructBlipForConditionalGeneration,
                          LlavaNextProcessor, LlavaNextForConditionalGeneration,
-                         Blip2Processor, Blip2ForConditionalGeneration)
+                         Blip2Processor, Blip2ForConditionalGeneration,
+                         Glm4vForConditionalGeneration, Gemma4ForConditionalGeneration)
 
 MULTIMODAL_MODELS = {
     "vilt": {
@@ -39,6 +42,31 @@ MULTIMODAL_MODELS = {
         "processor": AutoProcessor,
         "model": Qwen2VLForConditionalGeneration,
         "checkpoint": "Qwen/Qwen2-VL-7B-Instruct",
+        "type": "chat",
+        "device_map": "auto",
+        "attn_implementation": "sdpa"
+    },
+    "qwen3-vl": {
+        "processor": AutoProcessor,
+        "model": Qwen3VLForConditionalGeneration,
+        "checkpoint": "Qwen/Qwen3-VL-8B-Instruct",
+        "type": "chat",
+        "device_map": "auto",
+        "attn_implementation": "sdpa"
+    },
+    "glm-4.1v": {
+        "processor": AutoProcessor,
+        "model": Glm4vForConditionalGeneration,
+        "checkpoint": "zai-org/GLM-4.1V-9B-Thinking",
+        "type": "chat",
+        "device_map": "auto",
+        "attn_implementation": "sdpa",
+        "max_new_tokens": 1024  # needs room for the <think> trace before it reaches <answer>
+    },
+    "gemma-4": {
+        "processor": AutoProcessor,
+        "model": Gemma4ForConditionalGeneration,
+        "checkpoint": "google/gemma-4-E4B-it",
         "type": "chat",
         "device_map": "auto",
         "attn_implementation": "sdpa"
@@ -98,9 +126,10 @@ class VQAModel:
         """
 
         # -------------------------------------------------
-        # Qwen2.5-VL 
+        # Qwen2-VL / Qwen3-VL / GLM-4.1V / Gemma 4
         # -------------------------------------------------
-        if self.model_name == "qwen-vl":
+        if self.model_name in ("qwen-vl", "qwen3-vl", "glm-4.1v", "gemma-4"):
+            cfg = MULTIMODAL_MODELS[self.model_name]
             messages = [
                 {
                     "role": "user",
@@ -122,7 +151,7 @@ class VQAModel:
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=128,
+                    max_new_tokens=cfg.get("max_new_tokens", 128),
                     do_sample=False,
                     pad_token_id=self.processor.tokenizer.eos_token_id,
                 )
@@ -138,6 +167,15 @@ class VQAModel:
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=False,
             )[0].strip()
+
+            # Thinking models (e.g. GLM-4.1V-Thinking) emit <think>...</think> before
+            # the real answer, optionally wrapped in <answer>...</answer>. Keep only
+            # the final answer; no-op for models that don't use these tags.
+            answer_match = re.search(r"<answer>(.*?)</answer>", answer_text, re.DOTALL)
+            if answer_match:
+                answer_text = answer_match.group(1).strip()
+            else:
+                answer_text = re.sub(r"<think>.*?</think>", "", answer_text, flags=re.DOTALL).strip()
 
             return answer_text, None
 

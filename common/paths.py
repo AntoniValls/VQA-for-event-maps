@@ -15,7 +15,7 @@ ENV_PATH = ROOT / ".env"
 PROMPTS_PATH = ROOT / "vqa" / "prompts.json"
 
 CONTINENTS = ["Africa", "America", "Asia", "Europe", "Oceania"]
-MODELS = ["qwen-vl", "llava", "instructblip", "vilt"]
+MODELS = ["qwen-vl", "qwen3-vl", "glm-4.1v", "gemma-4", "llava", "instructblip", "vilt"]
 
 
 def get_setting(name, default=None):
