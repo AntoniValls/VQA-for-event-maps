@@ -52,7 +52,11 @@ MULTIMODAL_MODELS = {
         "checkpoint": "Qwen/Qwen3-VL-8B-Instruct",
         "type": "chat",
         "device_map": "auto",
-        "attn_implementation": "sdpa"
+        "attn_implementation": "sdpa",
+        # Caps image tokens (~1MP worth) - this transformers release's vision tower
+        # scales ~linearly with patch count and is far slower per-patch than Qwen2-VL's,
+        # so uncapped (native ~3-4MP) images take 30s+ just to encode.
+        "processor_kwargs": {"size": {"longest_edge": 1024 * 1024, "shortest_edge": 65536}}
     },
     "glm-4.1v": {
         "processor": AutoProcessor,
@@ -69,7 +73,7 @@ MULTIMODAL_MODELS = {
         "checkpoint": "google/gemma-4-E4B-it",
         "type": "chat",
         "device_map": "auto",
-        "attn_implementation": "sdpa"
+        "attn_implementation": "eager"  # its audio submodule doesn't support sdpa yet
     }
 }
 
@@ -99,7 +103,7 @@ class VQAModel:
     def _load_model(self):
         cfg = MULTIMODAL_MODELS[self.model_name]
 
-        processor = cfg["processor"].from_pretrained(cfg["checkpoint"])
+        processor = cfg["processor"].from_pretrained(cfg["checkpoint"], **cfg.get("processor_kwargs", {}))
 
         model_kwargs = {"torch_dtype": self.dtype}
         if cfg["device_map"] is not None:
