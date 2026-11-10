@@ -525,6 +525,35 @@ python dataset/review_gt.py --continent Asia --city Hanoi     # open http://loca
 
 The first change creates `ground_truth_labels.jsonl.bak` with the original file. Only correct the GT when the annotator was clearly wrong, not because the models say so. Afterwards, re-evaluate (`python evaluation/evaluate.py --continent Asia --city Hanoi`) and rebuild the merged GT (`python dataset/merge_gt.py`).
 
+### 5.9 Automated sync (maintainer, recommended for many submissions)
+
+[`dataset/sync_submissions.py`](dataset/sync_submissions.py) replaces the manual download/unzip/run/re-zip routine of §5.6-§7 with one command, for when several contributors are submitting regularly. It pulls new archives from each contributor's own Drive, imports the sequences as-is (no review gate - run `review_sequences.py` separately if you ever want to check one by hand), and runs the models — keeping only keyframes + ground truth + metadata + results in `data/` (the full-resolution `images/` dump is discarded; it's reconstructable from Mapillary via `info.json`/`metadata.json` if ever needed for a re-check). Import dedup/renaming is the same as `import_submissions.py` (§5.7): a resubmitted sequence (same Mapillary images) is skipped, a name collision with different images gets the next free number.
+
+One-time setup, per contributor remote (see the module docstring for the full walkthrough, including rclone's shared client_id being retired and how to point a remote at a specific "anyone with the link" Drive folder):
+
+```bash
+rclone config          # one remote per contributor, each pointing at their own Drive (e.g. "jorge")
+# In .env: VQA_DRIVE_REMOTES="Jorge=jorge:,Loe=loe:"
+```
+
+```bash
+python dataset/sync_submissions.py --dry-run      # see what would be imported, touch nothing
+python dataset/sync_submissions.py                # pull, import, run the models, done
+```
+
+By default it runs `qwen-vl`, `gemma-4`, `llava` and `qwen3-vl` on the newly imported sequences (skips `vilt` and `glm-4.1v`); override with `--models`.
+
+Optionally back up all of `data/` (still lean: no full-res images) to a second remote (e.g. Proton Drive, since `data/` is git-ignored and is otherwise the only copy once the full-resolution images are dropped) every time it syncs:
+
+```bash
+rclone config          # add a second remote, e.g. named "proton" (rclone's "protondrive" backend)
+# In .env: VQA_BACKUP_REMOTE="proton:VQA-Backups"
+```
+
+```bash
+python dataset/sync_submissions.py --backup       # sync, then rclone copy data/ -> VQA_BACKUP_REMOTE
+```
+
 ---
 
 ## 6. Self-recorded data (Biel Glasses / ZED)
@@ -541,7 +570,7 @@ From step (2) on, the pipeline is the same as for Mapillary.
 
 ## 7. Running the VQA models
 
-[`vqa/run.py`](vqa/run.py) processes every annotated sequence found in the data folder. For each model and sequence it:
+[`vqa/run.py`](vqa/run.py) processes every sequence with keyframes found in the data folder - ground truth is not required (only evaluation needs it, §8). For each model and sequence it:
 
 1. Loads the 20 keyframes from `images_selected/`.
 2. Asks the 8 Level-1 questions, then the follow-ups of every *yes* answer (Level 2 and then Level 3), with the base context prepended.

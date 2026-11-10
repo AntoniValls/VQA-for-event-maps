@@ -29,3 +29,9 @@ students_data/
 *.tar.gz
 *.tgz
 *.zip
+
+# Configurations
+.vscode/
+
+#ai
+.claude/

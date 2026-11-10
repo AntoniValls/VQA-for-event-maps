@@ -1,6 +1,7 @@
 """
-Runs the VQA models over the annotated sequences and writes results/<model>/answers.jsonl.
-Evaluation and event maps are separate steps (evaluation/evaluate.py, evaluation/event_map.py).
+Runs the VQA models over every sequence with keyframes (images_selected/) and writes
+results/<model>/answers.jsonl. Ground truth is not required here - only evaluation needs it
+(evaluation/evaluate.py, evaluation/event_map.py).
 
     python vqa/run.py                                             # all sequences, all models
     python vqa/run.py --models qwen-vl --continent Asia --city Tokio1
@@ -38,7 +39,7 @@ def ask(vqa_model, image, prompt_manager, question):
     return None, None
 
 
-def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name):
+def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name, verbose=False):
     """
     Ask the question hierarchy level by level: all Level-1 questions, then the follow-ups
     of every 'yes' answer (Level 2), then the follow-ups of those (Level 3).
@@ -54,7 +55,8 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
     level = 1
 
     while current:
-        print(f"\n{'='*70}\nLEVEL {level} QUESTIONS ({len(current)})\n{'='*70}")
+        if verbose:
+            print(f"\n{'='*70}\nLEVEL {level} QUESTIONS ({len(current)})\n{'='*70}")
         next_level = []
 
         for question, parent_id in current:
@@ -62,9 +64,10 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name)
             if answer is None:
                 continue
 
-            label = prompt_manager.get_short_label(question)
-            conf_txt = f" (conf: {confidence:.2f})" if confidence is not None else ""
-            print(f"{'  └─ ' if level > 1 else ''}{label}: {answer}{conf_txt}")
+            if verbose:
+                label = prompt_manager.get_short_label(question)
+                conf_txt = f" (conf: {confidence:.2f})" if confidence is not None else ""
+                print(f"{'  └─ ' if level > 1 else ''}{label}: {answer}{conf_txt}")
 
             result = {
                 "question_id": question['id'],
@@ -100,36 +103,44 @@ def get_model(model_name, device, dtype):
     return _loaded_model["model"]
 
 
-def run_sequence(seq_dir, model_name, prompt_preset="full_hierarchical", num_keyframes=20):
+def run_sequence(seq_dir, model_name, prompt_preset="full_hierarchical", num_keyframes=20, verbose=False):
     """Run one model over the keyframes (images_selected/) of one sequence."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
-    print(f"Using device: {device} (dtype: {dtype})")
+    if verbose:
+        print(f"Using device: {device} (dtype: {dtype})")
 
     image_dir = Path(seq_dir) / "images_selected"
     answers_folder = Path(seq_dir) / "results" / model_name
     answers_folder.mkdir(parents=True, exist_ok=True)
     answers_path = answers_folder / "answers.jsonl"
-    print(f"Output: {answers_path}")
+    if verbose:
+        print(f"Output: {answers_path}")
 
     image_files = sorted(p for p in image_dir.glob("*") if p.suffix.lower() in IMAGE_EXTENSIONS)
     if not image_files:
         raise FileNotFoundError(f"No images found in {image_dir}")
-    print(f"Found {len(image_files)} images in {image_dir}")
+    if verbose:
+        print(f"Found {len(image_files)} images in {image_dir}")
 
     frame_stride = max(1, len(image_files) // num_keyframes)
 
     prompt_manager = PromptManager(preset=prompt_preset)
-    prompt_manager.print_hierarchy_info()
+    if verbose:
+        prompt_manager.print_hierarchy_info()
     vqa_model = get_model(model_name, device, dtype)
+
+    if not verbose:
+        print(f"{model_name} | {Path(seq_dir).parent.name}/{Path(seq_dir).name}")
 
     with open(answers_path, "w", encoding="utf-8") as ans_f:
         for idx, image_path in enumerate(image_files):
             if idx % frame_stride == 0:
                 image = Image.open(image_path).convert('RGB')
-                print(f"\n{'='*70}\nIMAGE {idx+1}/{len(image_files)}: {image_path.name}\n{'='*70}")
+                if verbose:
+                    print(f"\n{'='*70}\nIMAGE {idx+1}/{len(image_files)}: {image_path.name}\n{'='*70}")
 
-                for result in process_hierarchical_questions(image, prompt_manager, vqa_model, model_name):
+                for result in process_hierarchical_questions(image, prompt_manager, vqa_model, model_name, verbose):
                     result["image_path"] = record_path(image_path)
                     result["image_name"] = image_path.name
                     result["image_index"] = idx
@@ -138,7 +149,9 @@ def run_sequence(seq_dir, model_name, prompt_preset="full_hierarchical", num_key
 
             progress_bar((idx + 1) / len(image_files) * 100, 30)
 
-    print("\n\nProcessing complete!")
+    print()
+    if verbose:
+        print("Processing complete!")
     return answers_path
 
 
@@ -153,11 +166,13 @@ if __name__ == "__main__":
     parser.add_argument("--overwrite", action="store_true",
                         help="Re-run sequences that already have answers for a model (default: skip them, "
                              "so the paper's results are never overwritten by accident)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print every question and answer (default: just a progress bar per sequence)")
     args = parser.parse_args()
 
-    sequences = list_sequences(args.continent, args.city, author=args.author)
+    sequences = list_sequences(args.continent, args.city, require_gt=False, author=args.author)
     if not sequences:
-        sys.exit("No annotated sequences found (need data/<Continent>/<City>/ground_truth_labels.jsonl)")
+        sys.exit("No sequences found (need data/<Continent>/<City>/images_selected/)")
 
     errors, skipped = [], []
     for model in args.models:
@@ -165,10 +180,11 @@ if __name__ == "__main__":
             if not args.overwrite and (sequence_dir(continent, city) / "results" / model / "answers.jsonl").exists():
                 skipped.append(f"{model} | {continent}/{city}")
                 continue
-            print(f"{'='*70}\nVQA Pedestrian Navigation System - Hierarchical Mode")
-            print(f"Model: {model} | Preset: {args.preset} | {continent}/{city}\n{'='*70}")
+            if args.verbose:
+                print(f"{'='*70}\nVQA Pedestrian Navigation System - Hierarchical Mode")
+                print(f"Model: {model} | Preset: {args.preset} | {continent}/{city}\n{'='*70}")
             try:
-                run_sequence(sequence_dir(continent, city), model, args.preset, args.num_keyframes)
+                run_sequence(sequence_dir(continent, city), model, args.preset, args.num_keyframes, args.verbose)
             except Exception as e:
                 errors.append(f"ERROR: --- {model} | {continent}/{city}: {e}")
                 print(errors[-1])

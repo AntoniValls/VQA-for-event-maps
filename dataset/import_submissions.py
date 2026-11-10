@@ -97,10 +97,14 @@ def remove_empty_parents(path, stop):
 
 
 def import_submissions(root, author=None, dry_run=False):
+    """Returns (imported, duplicates): the (continent, city) pairs newly moved into data/, and the
+    already-in-the-dataset (continent, city) pairs that a same-images resubmission matched (both
+    empty if dry_run or nothing to do)."""
     root = Path(root)
     submissions = find_submissions(root)
     if not submissions:
-        sys.exit(f"No sequences (folders with ground_truth_labels.jsonl) under {root}")
+        print(f"No sequences (folders with ground_truth_labels.jsonl) under {root}")
+        return [], []
 
     existing = {seq: image_ids(seq) for seq in dataset_sequences()}
     stop = root.resolve()
@@ -121,6 +125,7 @@ def import_submissions(root, author=None, dry_run=False):
             same = next((e for e, e_ids in existing.items() if ids and ids & e_ids), None)
             if same:
                 row["skip"] = f"same images already in the dataset as {same.relative_to(DATA_DIR)}"
+                row["existing"] = same
             else:
                 row["dest"] = free_name(continent, city, taken)
                 taken.add((continent, row["dest"]))
@@ -132,13 +137,15 @@ def import_submissions(root, author=None, dry_run=False):
                  (f"  (renamed from {r['city']})" if r["dest"] != r["city"] else "")
         print(f"{str(r['author']):8s} {r['continent'] + '/' + r['city']:28s} {target:30s} {r['review'] if 'skip' not in r else ''}")
     todo = [r for r in plan if "skip" not in r]
+    duplicates = [(r["existing"].parts[-2], r["existing"].parts[-1]) for r in plan if "existing" in r]
     print(f"\n{len(todo)} to import, {len(plan) - len(todo)} skipped.")
     if dry_run or not todo:
         if dry_run:
             print("Dry run: nothing was moved.")
-        return
+        return [], duplicates
 
     today = date.today().isoformat()
+    imported = []
     for r in todo:
         src, dest = r["src"], DATA_DIR / r["continent"] / r["dest"]
         info = build_info(src, author=r["author"], added_to_dataset=today, in_paper=False)
@@ -152,8 +159,10 @@ def import_submissions(root, author=None, dry_run=False):
             rewrite_image_paths(dest, r["city"], r["dest"], r["continent"])
         remove_empty_parents(src.parent, stop)
         print(f"Imported {r['continent']}/{r['dest']} ({r['author']})")
+        imported.append((r["continent"], r["dest"]))
     print(f"\nDone. Run the models on them with: python vqa/run.py   (sequences with existing results are re-run too;"
           f" use --continent/--city to limit)")
+    return imported, duplicates
 
 
 def tag_existing(author, in_paper):
@@ -183,6 +192,8 @@ if __name__ == "__main__":
     if args.tag_existing:
         tag_existing(args.tag_existing, args.in_paper)
     elif args.path:
+        if not find_submissions(args.path):
+            sys.exit(f"No sequences (folders with ground_truth_labels.jsonl) under {args.path}")
         import_submissions(args.path, args.author, args.dry_run)
     else:
         parser.error("give a path to import (e.g. students_data) or --tag-existing AUTHOR")
