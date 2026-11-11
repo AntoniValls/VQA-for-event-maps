@@ -604,13 +604,35 @@ python evaluation/evaluate.py --continent Asia --city Hanoi --models qwen-vl
 
 - **Level-2/3 questions are evaluated only where the GT has an answer**, i.e. where the annotator said *yes* to the parent. Follow-ups triggered by a model false positive have no GT and are ignored (see paper §IV-B).
 
-### Risk score (paper §III-C)
+### Risk score (paper §III-C, extended)
 
-For each image, over the 8 Level-1 questions $Q$:
+By default, `image_risk()` is **hierarchical**: each Level-1 question's severity is modulated by its own Level-2/3 follow-up answers, instead of ignoring them. This fixes the original formula's flaw where a single serious hazard (e.g. construction alone) was swamped by the "No" reward from the other 7 Level-1 questions.
+
+For a node $n$ answered "Yes", recursively over its own follow-up questions $c$ (sign $+1$ escalates, sign $-1$ mitigates; $(sign, \sigma)$ priors for every Level-2/3 question are in `DETAIL_CONFIG`, matched against the `dependency` tree of `vqa/prompts.json` - not hardcoded):
+
+$$s_n = \left[\sigma_n + (1-\sigma_n) A_n\right](1 - M_n), \qquad A_n = 1 - \prod_{c:\,sign+} (1 - y_c s_c), \qquad M_n = 1 - \prod_{c:\,sign-} (1 - y_c s_c)$$
+
+where $y_c = 1$ if $c$ is "Yes" else $0$ ("No" and unasked questions contribute nothing). Level-1 questions use a fixed base severity $\sigma = 0.5$.
+
+In words: `A_n` (aggravating) combines `n`'s escalating children (sign +1, e.g. "barriers present") into one noisy-OR value - 0 if none fired, climbing toward 1 as more/stronger ones do, without ever letting several moderate hazards push past 1. `M_n` (mitigating) is the same noisy-OR combination over the *mitigating* children (sign -1, e.g. "handrail present", "crossing marked"). `s_n` starts at `n`'s own base severity, lets `A_n` push it up toward 1, then lets `M_n` scale it back down. `s_c` is just `c`'s own `s_n` - the same computation, one level down (a leaf with no children of its own just keeps its base `sigma`).
+
+**Example.** `q_construction_visible` (Level-1, $\sigma=0.5$) = Yes, and its only answered follow-up is `q_construction_barriers` (sign +1, $\sigma=0.6$) = Yes:
+$$A_n = 1-(1-0.6) = 0.6, \quad M_n = 0, \quad s_n = [0.5 + 0.5 \times 0.6] \times (1-0) = 0.8$$
+so "construction, confirmed by barriers" scores 0.8 instead of the flat 0.5 it'd get with no follow-up answered - the escalation working. Contrast with `q_crossing_nearby` = Yes and `q_crossing_marked` (sign **-1**, $\sigma=0.2$) = Yes, nothing else answered:
+$$A_n = 0, \quad M_n = 1-(1-0.2) = 0.2, \quad s_n = [0.5 + 0.5\times 0] \times (1-0.2) = 0.4$$
+a marked crossing with no other danger signs pulls the score down from 0.5 to 0.4 - the mitigation working.
+
+Final image score, over the 8 Level-1 questions $Q$ (each weight capped at 0.95 so no single hazard alone can saturate the score to a clean 1.0):
+
+$$R_{img} = 1 - \prod_{i \in Q} \left(1 - \min(w_i, 0.95)\, y_i\, s_i\right)$$
+
+with $w_i$ = 1.0 (Construction, Surface, Non-Sidewalk), 0.6 (Crossings, Stairs, Obstacles), 0.3 (Crowding, Vehicles).
+
+The original Level-1-only formula (paper §III-C as published, Level-2/3 answers ignored) is still available via `image_risk(..., hierarchical=False, aggregation="sum")`:
 
 $$R_{img} = \frac{\max\left(0, \sum_{i \in Q} w_i x_i\right)}{\sum_{i \in Q} w_i}, \qquad x_i = \begin{cases} 1 & \text{Yes} \\ -1/|Q| & \text{No} \\ 0 & \text{unanswered} \end{cases}$$
 
-with $w_i$ = 1.0 (Construction, Surface, Non-Sidewalk), 0.6 (Crossings, Stairs, Obstacles), 0.3 (Crowding, Vehicles). All of this is defined once in [`evaluation/risk.py`](evaluation/risk.py) (`HAZARD_CONFIG`, `SAFETY_REWARD_RATIO = 1/8`, thresholds), used by both the evaluation and the event maps.
+All of this is defined once in [`evaluation/risk.py`](evaluation/risk.py) (`HAZARD_CONFIG`, `DETAIL_CONFIG`, `SAFETY_REWARD_RATIO = 1/8`, thresholds), used by both the evaluation and the event maps.
 
 - **Segment risk** = max of the image risks mapped to that OSM street segment.
 - **Categories**: Safe ≤ 0.15 < Caution < 0.4 ≤ Danger < 0.7 ≤ High Risk.

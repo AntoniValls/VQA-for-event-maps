@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import base64
 from pathlib import Path
@@ -10,20 +11,19 @@ import numpy as np
 import pandas as pd
 import string
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from evaluation.risk import WEIGHTS as weight_lookup, SAFETY_REWARD_RATIO
+
 
 def get_normalized_risk(img_questions, primary_ids):
     """
     Calculates a normalized risk score [0, 1] using a weighted penalty/reward system.
-    Copied from original code for consistency.
+    Weights and SAFETY_REWARD_RATIO come from evaluation.risk (single source of truth);
+    this reproduces evaluation.risk.image_risk(hierarchical=False, aggregation="sum").
     """
-    HAZARD_CONFIG = {
-        "CRITICAL": {"weight": 1, "ids": ["q_construction_visible", "q_surface_hazardous", "q_pedestrian_not_on_sidewalk"]},
-        "HIGH":     {"weight": 0.6, "ids": ["q_crossing_nearby", "q_stairs_visible", "q_obstacle_blocking"]},
-        "LOW":      {"weight": 0.3, "ids": ["q_pedestrians_present", "q_vehicle_nearby"]}
-    }
-    
-    SAFETY_REWARD_RATIO = 1/8
-    weight_lookup = {qid: cfg["weight"] for cfg in HAZARD_CONFIG.values() for qid in cfg["ids"]}
     active_weights = [weight_lookup.get(qid, 0) for qid in primary_ids]
     max_theoretical = sum(active_weights)
     
