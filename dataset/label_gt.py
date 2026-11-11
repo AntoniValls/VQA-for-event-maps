@@ -298,22 +298,28 @@ def create_ground_truth_labels(
         image_files.extend(Path(image_dir).glob(f"*{ext.upper()}"))
 
     image_files = sorted(image_files)
-    if not image_files:
-        print("No images found.")
-        return 1
-    
-    print(f"Found {len(image_files)} images")
-    
-    # ------------------------------------------------------------------
-    # Select keyframes
-    # ------------------------------------------------------------------
     selected_dir = os.path.join(input_dir, "images_selected")
-
-    # If no images in the folder trigger select_images=True
     n_selected = sum(1 for p in Path(selected_dir).iterdir() if p.is_file()) if os.path.isdir(selected_dir) else 0
-    if n_selected != num_keyframes:
-        select_images = True
-        print(f"Found {n_selected} images in images_selected (need {num_keyframes}). Triggering selection")
+
+    # Keyframes-only sequence (no images/ folder, e.g. data/user-case/ - the full frame set lives
+    # elsewhere): nothing to select from, so images_selected/ itself must already be complete.
+    keyframes_only = not image_files
+    if keyframes_only:
+        if n_selected != num_keyframes:
+            print(f"No images/ folder, and images_selected/ has {n_selected} (need {num_keyframes}). "
+                  f"Can't select keyframes without the full frame set - populate images_selected/ "
+                  f"with exactly {num_keyframes} images first.")
+            return 1
+        print(f"No images/ folder - treating as keyframes-only "
+              f"({n_selected} already in images_selected/). Original frame index will be read "
+              f"from each filename's numeric prefix.")
+        select_images = False
+    else:
+        print(f"Found {len(image_files)} images")
+        # If no images in the folder trigger select_images=True
+        if n_selected != num_keyframes:
+            select_images = True
+            print(f"Found {n_selected} images in images_selected (need {num_keyframes}). Triggering selection")
 
     if select_images and n_selected > 0:
         # Leftovers from a previous (incomplete) selection would mix with the new one
@@ -369,7 +375,13 @@ def create_ground_truth_labels(
         with open(output_path, write_mode, encoding="utf-8") as f:
             for idx, image_path in enumerate(selected_images):
                 
-                original_index = image_files.index(image_path.parent.parent / "images" / image_path.name)
+                if keyframes_only:
+                    try:
+                        original_index = int(Path(image_path.name).stem)
+                    except ValueError:
+                        original_index = idx
+                else:
+                    original_index = image_files.index(image_path.parent.parent / "images" / image_path.name)
 
                 # Get the image already answered questions
                 current_labels = load_existing_labels_by_image_and_question(output_path)
@@ -410,8 +422,10 @@ def create_ground_truth_labels(
                 if not initial_prompts:
                     continue
 
+                total_display = len(selected_images) if keyframes_only else len(image_files)
+                image_num = idx + 1 if keyframes_only else original_index + 1
                 print(f"\n{'='*70}")
-                print(f"IMAGE {original_index+1}/{len(image_files)}: {image_path.name}")
+                print(f"IMAGE {image_num}/{total_display}: {image_path.name}")
                 print(f"{'='*70}\n")
                 
                 q_idx = 0
@@ -664,8 +678,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     input_directory = sequence_dir(args.continent, args.city)
-    if not (input_directory / "images").is_dir():
-        sys.exit(f"No images/ folder in {input_directory}. Download the sequence first.")
+    if not (input_directory / "images").is_dir() and not (input_directory / "images_selected").is_dir():
+        sys.exit(f"No images/ or images_selected/ folder in {input_directory}. Download/import the sequence first.")
 
     if args.override and not args.patch:
         reply = input("--override without --patch will OVERWRITE the whole GT file. Continue? [y/N] ")

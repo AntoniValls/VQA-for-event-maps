@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 PROMPTS_PATH = ROOT / "vqa" / "prompts.json"
 
-CONTINENTS = ["Africa", "America", "Asia", "Europe", "Oceania"]
+CONTINENTS = ["Africa", "America", "Asia", "Europe", "Oceania", "user-case"]
 MODELS = ["qwen-vl", "qwen3-vl", "glm-4.1v", "gemma-4", "llava", "instructblip", "vilt"]
 
 
