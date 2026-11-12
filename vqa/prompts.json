@@ -3,6 +3,7 @@
     "version": "3.1",
     "description": "Hierarchical VQA Question System for Pedestrian Navigation",
     "base_context": "You are an expert at detecting pedestrian obstacles for people with low vision. Answer only with Yes or No.",
+    "base_context_vilt": "Pedestrian obstacles. Yes or No?",
     "date_created": "2025-12-01",
     "date_updated": "2026-09-30"
   },

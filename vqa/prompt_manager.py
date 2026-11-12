@@ -121,9 +121,14 @@ class PromptManager:
         """
         return self.initial_prompts
     
-    def get_full_prompt(self, question_data: Dict) -> str:
-        """Get full prompt with base context."""
-        return f"{self.base_context} {question_data['text']}"
+    def get_full_prompt(self, question_data: Dict, model_name: Optional[str] = None) -> str:
+        """
+        Get full prompt with base context. Models with their own "base_context_<model_name>"
+        entry in prompts.json metadata (e.g. ViLT, whose 40-token text limit can't fit the
+        default base_context plus the longest questions) use that instead.
+        """
+        context = self.config['metadata'].get(f"base_context_{model_name}", self.base_context)
+        return f"{context} {question_data['text']}"
     
     def get_short_label(self, question_data: Dict) -> str:
         """Get short label for display."""

@@ -16,9 +16,11 @@ from typing import Dict
 ROOT = Path(__file__).resolve().parents[1]
 PROMPTS_PATH = ROOT / "vqa" / "prompts.json"
 
-# Hazard tiers: weight w_i of each Level-1 question
+# Hazard tiers: weight w_i of each Level-1 question. CRITICAL is 0.85, not 1.0 - even a fully
+# escalated critical hazard (s_i=1) should leave some irreducible uncertainty in the noisy-or
+# aggregation below, rather than letting a single question saturate R_img on its own.
 HAZARD_CONFIG = {
-    "CRITICAL": {"weight": 1.0, "ids": ["q_construction_visible", "q_surface_hazardous", "q_pedestrian_not_on_sidewalk"]},
+    "CRITICAL": {"weight": 0.85, "ids": ["q_construction_visible", "q_surface_hazardous", "q_pedestrian_not_on_sidewalk"]},
     "HIGH":     {"weight": 0.6, "ids": ["q_crossing_nearby", "q_stairs_visible", "q_obstacle_blocking"]},
     "LOW":      {"weight": 0.3, "ids": ["q_pedestrians_present", "q_vehicle_nearby"]},
 }
@@ -31,10 +33,6 @@ SAFETY_REWARD_RATIO = 1 / len(WEIGHTS)
 # Level-1 questions have no "dependency" entry of their own (they're the hierarchy's roots), so
 # their own base severity isn't in DETAIL_CONFIG below - it's fixed here instead.
 BASE_SEVERITY_L1 = 0.5
-
-# Clamp applied to each Level-1 weight in the noisy-or aggregation, so a single hazard can't by
-# itself saturate the image score to a clean 1.0 (paper §III-C, extended).
-NOISY_OR_WEIGHT_CAP = 0.95
 
 # (sign, sigma) of every Level-2/Level-3 question relative to its parent (the "dependency" field
 # in vqa/prompts.json): sign=+1 means answering "Yes" raises the parent's strength (escalates),
@@ -154,12 +152,12 @@ def _node_strength(qid: str, answers_by_question: Dict[str, Dict], memo: Dict[st
 
 
 def _image_risk_noisy_or(answers_by_question: Dict[str, Dict]) -> float:
-    """R_img = 1 - Pi_i (1 - min(w_i, cap)*y_i*s_i) over the 8 Level-1 questions."""
+    """R_img = 1 - Pi_i (1 - w_i*y_i*s_i) over the 8 Level-1 questions."""
     memo: Dict[str, float] = {}
     terms = []
     for qid, w in WEIGHTS.items():
         s_i = _node_strength(qid, answers_by_question, memo) if _is_yes(answers_by_question.get(qid)) else 0.0
-        terms.append(min(w, NOISY_OR_WEIGHT_CAP) * s_i)
+        terms.append(w * s_i)
     return 1 - math.prod(1 - t for t in terms)
 
 

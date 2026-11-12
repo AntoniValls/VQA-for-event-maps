@@ -622,11 +622,11 @@ so "construction, confirmed by barriers" scores 0.8 instead of the flat 0.5 it'd
 $$A_n = 0, \quad M_n = 1-(1-0.2) = 0.2, \quad s_n = [0.5 + 0.5\times 0] \times (1-0.2) = 0.4$$
 a marked crossing with no other danger signs pulls the score down from 0.5 to 0.4 - the mitigation working.
 
-Final image score, over the 8 Level-1 questions $Q$ (each weight capped at 0.95 so no single hazard alone can saturate the score to a clean 1.0):
+Final image score, over the 8 Level-1 questions $Q$:
 
-$$R_{img} = 1 - \prod_{i \in Q} \left(1 - \min(w_i, 0.95)\, y_i\, s_i\right)$$
+$$R_{img} = 1 - \prod_{i \in Q} \left(1 - w_i\, y_i\, s_i\right)$$
 
-with $w_i$ = 1.0 (Construction, Surface, Non-Sidewalk), 0.6 (Crossings, Stairs, Obstacles), 0.3 (Crowding, Vehicles).
+with $w_i$ = 0.85 (Construction, Surface, Non-Sidewalk), 0.6 (Crossings, Stairs, Obstacles), 0.3 (Crowding, Vehicles). CRITICAL is 0.85, not 1.0, so even a fully escalated critical hazard ($s_i=1$) leaves some irreducible uncertainty rather than letting one question alone saturate $R_{img}$ to a clean 1.0 - no separate cap needed.
 
 The original Level-1-only formula (paper §III-C as published, Level-2/3 answers ignored) is still available via `image_risk(..., hierarchical=False, aggregation="sum")`:
 

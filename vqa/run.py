@@ -26,10 +26,10 @@ from vqa.prompt_manager import PromptManager
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
 
 
-def ask(vqa_model, image, prompt_manager, question):
+def ask(vqa_model, image, prompt_manager, question, model_name):
     """Ask one question (with the base context). Falls back to the bare question if the model rejects it."""
     try:
-        return vqa_model.process_question(image, prompt_manager.get_full_prompt(question))
+        return vqa_model.process_question(image, prompt_manager.get_full_prompt(question, model_name))
     except Exception as e:
         print(f"Error processing question '{question['id']}': {e}")
     try:
@@ -60,7 +60,7 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name,
         next_level = []
 
         for question, parent_id in current:
-            answer, confidence = ask(vqa_model, image, prompt_manager, question)
+            answer, confidence = ask(vqa_model, image, prompt_manager, question, model_name)
             if answer is None:
                 continue
 
@@ -71,7 +71,7 @@ def process_hierarchical_questions(image, prompt_manager, vqa_model, model_name,
 
             result = {
                 "question_id": question['id'],
-                "question": prompt_manager.get_full_prompt(question),
+                "question": prompt_manager.get_full_prompt(question, model_name),
                 "answer": answer,
                 "confidence": confidence,
                 "model": model_name,
