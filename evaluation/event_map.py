@@ -1,6 +1,6 @@
 """
-Interactive risk event maps (paper §III-D / Fig. 4): keyframes are snapped to the nearest
-OpenStreetMap street segment, each segment is coloured by the max risk of its images.
+Interactive risk event maps (paper §III-D / Fig. 4): the walked GPS track is split into fixed-
+length segments, each coloured by the max risk of whichever analyzed keyframes fall inside it.
 
     python evaluation/event_map.py --continent America --city NewYork --model qwen-vl
 """
@@ -15,10 +15,7 @@ from io import BytesIO
 from pathlib import Path
 
 import folium
-import networkx as nx
-import osmnx as ox
 import pandas as pd
-import requests
 import xyzservices.providers as xyz
 from PIL import Image
 
@@ -27,94 +24,80 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from common.paths import PROMPTS_PATH, get_setting, sequence_dir
-from evaluation.risk import image_risk, risk_color
+from evaluation.risk import RISK_CATEGORIES, image_risk, risk_color
 
-# Cache the OpenStreetMap street network downloads in <repo>/cache (git-ignored), whatever the working directory
-ox.settings.cache_folder = str(ROOT / "cache")
-CACHE_DIR = ROOT / "cache"
+# Length of each coloured track segment. Earlier versions snapped keyframes onto an OpenStreetMap
+# street graph instead, but that kept hitting edge cases (buildings parsed as streets, the wrong
+# street coloured near a multi-way intersection, endpoints with no edge coverage, ...). Colouring
+# fixed-length chunks of the actual walked track sidesteps all of that - no street graph involved.
+SEGMENT_LENGTH_M = 50
 
 
-def download_street_network(min_lat, min_lon, max_lat, max_lon, pad_m=80):
+def _haversine_m(lat1, lon1, lat2, lon2):
+    """Great-circle distance in meters between two (lat, lon) points."""
+    R = 6371000.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi, dlambda = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def segment_track(gps_df_raw, gps_df_filtered, answers_by_image, segment_length_m=SEGMENT_LENGTH_M):
     """
-    Street network covering a GPS bbox (+ a small padding), pulled straight from the main OSM
-    0.6 API (api.openstreetmap.org/api/0.6/map) instead of an Overpass query. Every public
-    Overpass mirror (overpass-api.de, kumi.systems/private.coffee, monicz.dev, osm.ch, ...) is
-    either IP-blocked or regional-only on this network, while the core OSM API isn't - this
-    avoids Overpass entirely. Unlike Overpass, this endpoint returns *everything* in the bbox
-    (buildings, POIs, not just streets) and is capped at 50k nodes, so the box has to stay
-    tight - a fixed 1km radius blows through that cap in any dense city center. We only need
-    it to cover the sequence's own GPS points, not an arbitrary radius.
+    Split the walked GPS track (gps_df_raw, in order) into contiguous ~segment_length_m chunks,
+    each coloured by the max risk of the analyzed images (gps_df_filtered) that fall inside it.
+
+    Returns a list of (coords, risk_or_None) in walking order - coords is the [lat, lon] pairs
+    making up that chunk (to draw as one polyline), risk_or_None is None where no analyzed image
+    falls in that stretch.
     """
-    center_lat = (min_lat + max_lat) / 2
-    lat_pad = pad_m / 111_320
-    lon_pad = pad_m / (111_320 * math.cos(math.radians(center_lat)))
-    bbox = (min_lon - lon_pad, min_lat - lat_pad, max_lon + lon_pad, max_lat + lat_pad)
+    points = gps_df_raw[['latitude', 'longitude']].values.tolist()
+    cum_dist = [0.0]
+    for (lat1, lon1), (lat2, lon2) in zip(points[:-1], points[1:]):
+        cum_dist.append(cum_dist[-1] + _haversine_m(lat1, lon1, lat2, lon2))
+    dist_by_filename = dict(zip(gps_df_raw['filename'], cum_dist))
 
-    CACHE_DIR.mkdir(exist_ok=True)
-    xml_path = CACHE_DIR / f"osm_map_{min_lat:.5f}_{min_lon:.5f}_{max_lat:.5f}_{max_lon:.5f}.xml"
-    if not xml_path.exists():
-        resp = requests.get(
-            "https://api.openstreetmap.org/api/0.6/map",
-            params={"bbox": ",".join(f"{v:.6f}" for v in bbox)},
-            headers={"User-Agent": "VQA-for-event-maps research project (github.com)"},
-            timeout=60,
-        )
-        resp.raise_for_status()
-        xml_path.write_bytes(resp.content)
+    segment_risks = {}
+    for _, row in gps_df_filtered.iterrows():
+        seg_idx = int(dist_by_filename[row['filename']] // segment_length_m)
+        risk = image_risk(answers_by_image.get(row['filename'], {}))
+        if seg_idx not in segment_risks or risk > segment_risks[seg_idx]:
+            segment_risks[seg_idx] = risk
 
-    # retain_all=True: graph_from_xml's default keeps only the largest connected component of
-    # the *raw* graph, before any street/building filtering - in a dense area the building-
-    # outline mesh can easily outsize the real (thinner) street network, silently discarding
-    # every actual street. Keep everything here; _filter_to_walkable takes the largest component
-    # of the streets-only graph instead, once buildings etc. are already gone.
-    # simplify=False: simplify_graph has a quirk on some of these small/looped bboxes where it
-    # drops the 'highway' edge attribute entirely if run before filtering.
-    G = ox.graph_from_xml(xml_path, bidirectional=True, simplify=False, retain_all=True)
-    G = _filter_to_walkable(G)
-    return ox.simplification.simplify_graph(G)
-
-
-# graph_from_xml has no network-type filter built in - an Overpass query only ever returns
-# highway-tagged ways, but the OSM 0.6 API's bbox dump returns *every* way in the box, including
-# building footprints and landuse polygons. graph_from_xml turns all of them into graph edges
-# regardless, so without this filter most "streets" in the graph are actually building outlines
-# (no 'highway' tag at all) - which is also why they never get a GPS point snapped to them.
-#
-# This keeps footway/path/pedestrian/steps/service/cycleway/track - unlike osmnx's network_type
-# ='drive' filter, which drops those - because this is a pedestrian dataset: plazas and
-# pedestrian-only streets are exactly where many sequences walk, and a 'drive'-only filter
-# leaves those areas with zero street edges at all.
-_NON_WALKABLE_HIGHWAY = {
-    "abandoned", "bus_guideway", "construction", "corridor", "elevator", "escalator",
-    "no", "planned", "platform", "proposed", "raceway", "razed", "rest_area",
-}
-
-
-def _filter_to_walkable(G):
-    drop = [
-        (u, v, k) for u, v, k, data in G.edges(keys=True, data=True)
-        if data.get("highway") is None
-        or set(data["highway"] if isinstance(data["highway"], list) else [data["highway"]]) & _NON_WALKABLE_HIGHWAY
-    ]
-    G.remove_edges_from(drop)
-    G.remove_nodes_from(list(nx.isolates(G)))
-    return ox.truncate.largest_component(G, strongly=False)
+    chunks = []
+    current_idx = int(cum_dist[0] // segment_length_m)
+    current_coords = [points[0]]
+    for i in range(1, len(points)):
+        seg_idx = int(cum_dist[i] // segment_length_m)
+        current_coords.append(points[i])
+        if seg_idx != current_idx:
+            chunks.append((current_coords, segment_risks.get(current_idx)))
+            current_coords = [points[i]]  # repeat the boundary point so segments connect visually
+            current_idx = seg_idx
+    chunks.append((current_coords, segment_risks.get(current_idx)))
+    return chunks
 
 
 # Background map styles. OpenStreetMap's own tile servers block maps opened as local files,
 # so the OSM-based backgrounds come from MapTiler, which needs a (free) key.
-TILE_STYLES = ["streets", "positron", "light", "backdrop", "blank"]
+TILE_STYLES = ["backdrop", "streets", "positron", "light", "blank"]
 MAPTILER_STYLES = {"streets": "Streets", "positron": "Positron", "backdrop": "Backdrop"}
 
 def add_background(m, style):
     """
-    streets:  MapTiler Streets (OpenStreetMap data)         -> needs MAPTILER_API_KEY in .env
-    positron: MapTiler Positron, light grey, has labels     -> needs MAPTILER_API_KEY in .env
-    backdrop: MapTiler Backdrop, plain grey - still has street-name labels at close zoom
-              -> needs MAPTILER_API_KEY in .env
+    backdrop: MapTiler Backdrop, plain grey streets+buildings  -> needs MAPTILER_API_KEY in .env
+    streets:  MapTiler Streets (OpenStreetMap data)            -> needs MAPTILER_API_KEY in .env
+    positron: MapTiler Positron, light grey                    -> needs MAPTILER_API_KEY in .env
     light:    Esri light grey canvas, no key needed (native zoom <= 16, less detail)
-    blank:    no tile imagery at all - solid flat grey, guaranteed no labels of any kind.
-              The simplest option; the drawn street graph itself is the only geography shown.
+    blank:    solid flat grey, no imagery at all - not even street/building shapes, just the
+              drawn track and markers on their own.
+
+    All of these are raster tiles with any labels baked directly into the pixels (street/shop
+    names, at close zoom), which there's no way to selectively strip via CSS - that needs vector
+    tiles and a different renderer (MapLibre GL instead of Leaflet), which this doesn't use.
+    CartoDB's once-free "no labels" raster tiles now require a paid account and silently return
+    an "API KEY REQUIRED" placeholder tile without one, so that option was removed rather than
+    left in as a trap.
 
     Every raster style still has some native color (parks, water, ...), so the tile pane is
     also forced to true greyscale via CSS - this only touches the basemap, not the risk-colored
@@ -124,8 +107,15 @@ def add_background(m, style):
         "<style>.leaflet-tile-pane { filter: grayscale(100%); }</style>"))
 
     if style == "blank":
-        m.get_root().html.add_child(folium.Element(
-            "<style>.leaflet-container { background: #dcdcdc !important; }</style>"))
+        # A real (if trivial) tile layer, not just a CSS background colour on the map container:
+        # Leaflet only finishes initializing its panes - which the markers/polylines drawn on top
+        # are positioned relative to - once a tile layer actually loads, so a map with no layer at
+        # all can end up with nothing visibly rendered. This repeats one solid-grey 1x1 PNG as every
+        # tile, so the "no imagery" look is identical but Leaflet still goes through its normal init.
+        folium.TileLayer(
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGO4c+cOAAUsApUYk4oFAAAAAElFTkSuQmCC",
+            attr=" ", name="blank", max_zoom=21,
+        ).add_to(m)
         return
 
     if style in MAPTILER_STYLES:
@@ -185,7 +175,7 @@ def load_barcelona_waypoints(city):
     return None
 
 
-def generate_waypoints_only_map(waypoints, output_html_path, map_title, tiles="streets"):
+def generate_waypoints_only_map(waypoints, output_html_path, map_title, tiles="positron"):
     """Minimal map for a Barcelona sequence with no per-frame GPS: just the recorded path and
     its waypoints, no risk colouring (there's no per-image position to colour)."""
     center_lat = sum(lat for lat, _ in waypoints) / len(waypoints)
@@ -220,7 +210,7 @@ def generate_event_map(seq_dir,
                        map_title,
                        prompt_json_path=PROMPTS_PATH,
                        show=True,
-                       tiles="streets"):
+                       tiles="positron"):
     """
     Args:
         seq_dir: data/<Continent>/<City> (metadata.json and images_selected/ are read from here)
@@ -267,56 +257,10 @@ def generate_event_map(seq_dir,
     answered_filenames = set(answers_by_image.keys())
     gps_df_filtered = gps_df_raw[gps_df_raw['filename'].isin(answered_filenames)].copy()
 
-   # 3. OSM Extraction
     center_lat, center_lon = gps_df_raw['latitude'].mean(), gps_df_raw['longitude'].mean()
-    G = download_street_network(
-        gps_df_raw['latitude'].min(), gps_df_raw['longitude'].min(),
-        gps_df_raw['latitude'].max(), gps_df_raw['longitude'].max(),
-    )
-    
-    # Colour every edge on the shortest path *between* each consecutive pair of images, not just
-    # each image's single nearest edge - near a multi-way intersection, the globally-nearest edge
-    # to one isolated point can be a street the path never actually used, while the shortest path
-    # between its neighbours is guaranteed to follow the real street network and connect up.
     gps_df_filtered = gps_df_filtered.sort_values('filename').reset_index(drop=True)
-    gps_df_filtered['node_id'] = ox.distance.nearest_nodes(G, gps_df_filtered['longitude'], gps_df_filtered['latitude'])
 
-    edge_risks = {}
-    for i in range(len(gps_df_filtered) - 1):
-        row_a, row_b = gps_df_filtered.iloc[i], gps_df_filtered.iloc[i + 1]
-        risk = max(image_risk(answers_by_image.get(row_a['filename'], {})),
-                   image_risk(answers_by_image.get(row_b['filename'], {})))
-        # int(): a pandas int64 column always hands back numpy.int64 scalars, whose str() differs
-        # from G's own plain-int node ids ("np.int64(123)" vs "123") - left as-is, the (u, v, k)
-        # edge_risks keys below would never match a real edge's.
-        try:
-            path_nodes = nx.shortest_path(G, int(row_a['node_id']), int(row_b['node_id']), weight='length')
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            continue
-        for u, v in zip(path_nodes[:-1], path_nodes[1:]):
-            k = min(G[u][v], key=lambda kk: G[u][v][kk].get('length', 0))
-            eid = str((u, v, k))
-            # Take the maximum risk if multiple image-pairs' paths share a segment
-            if eid not in edge_risks or risk > edge_risks[eid]:
-                edge_risks[eid] = risk
-
-    # The very first/last point has only one neighbour to route to/from, so routing alone only
-    # covers the edge *up to* its nearest node - the stretch of street past that node, right
-    # where a mid-block endpoint actually sits (nearest_nodes snaps to the closest intersection,
-    # which can legitimately be 30+m away), never gets coloured. Every interior point is
-    # bracketed by two neighbours so doesn't have this gap - only the two endpoints need the
-    # direct nearest-edge fallback (using it on every point would bring back the original bug:
-    # an isolated point's single nearest edge can be the wrong street near a busy intersection).
-    if len(gps_df_filtered) >= 1:
-        endpoints = gps_df_filtered.iloc[[0, -1]]
-        own_edges = ox.distance.nearest_edges(G, endpoints['longitude'], endpoints['latitude'])
-        for (u, v, k), (_, row) in zip(own_edges, endpoints.iterrows()):
-            eid = str((u, v, k))
-            risk = image_risk(answers_by_image.get(row['filename'], {}))
-            if eid not in edge_risks or risk > edge_risks[eid]:
-                edge_risks[eid] = risk
-
-    # 4. Initialize Map
+    # 3. Initialize Map
     m = folium.Map(location=[center_lat, center_lon], zoom_start=18, tiles=None)
     add_background(m, tiles)
 
@@ -329,41 +273,31 @@ def generate_event_map(seq_dir,
     </div>'''
     m.get_root().html.add_child(folium.Element(title_html))
 
-    # 5. Draw Road segments with Grey fallback
-    for u, v, k, edge_data in G.edges(keys=True, data=True):
-        eid_str = str((u, v, k))
-        
-        # Coordinates logic
-        if 'geometry' in edge_data:
-            coords = [[lat, lon] for lon, lat in edge_data['geometry'].coords]
-        else:
-            coords = [[G.nodes[u]['y'], G.nodes[u]['x']], [G.nodes[v]['y'], G.nodes[v]['x']]]
-        
-        # Check if this segment exists in our risk-mapped dictionary
-        if eid_str in edge_risks:
-            line_color = risk_color(edge_risks[eid_str])
-            line_weight = 12
+    # 4. Draw the track as ~100m segments, each coloured by the max risk of the images in it
+    for coords, risk in segment_track(gps_df_raw, gps_df_filtered, answers_by_image):
+        if risk is not None:
+            line_color = risk_color(risk)
+            line_weight = 16
             line_opacity = 0.7
-            tooltip_txt = f"Analyzed Risk: {edge_risks[eid_str]:.2f}"
+            tooltip_txt = f"Analyzed Risk: {risk:.2f}"
         else:
-            # Segment was not matched to any answered image
             line_color = "#bdc3c7"  # Grey
             line_weight = 4         # Thinner for background streets
             line_opacity = 0.3
             tooltip_txt = "No Image Data"
 
         folium.PolyLine(
-            coords, 
-            color=line_color, 
-            weight=line_weight, 
+            coords,
+            color=line_color,
+            weight=line_weight,
             opacity=line_opacity,
             tooltip=tooltip_txt
         ).add_to(m)
 
-    # 6. Draw Path (Thin blue sequence)
+    # 5. Draw Path (Thin blue sequence)
     folium.PolyLine(gps_df_raw[['latitude', 'longitude']].values.tolist(), color='#3498db', weight=2, opacity=0.8, dash_array='5, 5').add_to(m)
 
-    # 7. Add Markers with Full Context
+    # 6. Add Markers with Full Context
     for img_name, img_questions in answers_by_image.items():
         gps_row = gps_df_filtered[gps_df_filtered['filename'] == img_name]
         if gps_row.empty: continue
@@ -404,29 +338,21 @@ def generate_event_map(seq_dir,
         ).add_to(m)
 
     # 8. Updated Legend (Enlarged and Font-Optimized)
+    category_rows = "".join(
+        f'<div style="margin-bottom: 5px;">'
+        f'<i class="fa fa-square" style="color:{color}; font-size:22px; vertical-align: middle;"></i> '
+        f'<span style="margin-left: 10px;">{name}</span>'
+        f'</div>'
+        for name, color in RISK_CATEGORIES
+    )
     legend_html = f'''
-    <div style="position: fixed; bottom: 30px; left: 100px; width: 240px; 
+    <div style="position: fixed; bottom: 30px; left: 100px; width: 240px;
     background-color: white; border:3px solid #7f8c8d; z-index:9999; font-size:16px;
-    padding: 15px; border-radius: 12px; font-family: 'Segoe UI', Arial, sans-serif; 
+    padding: 15px; border-radius: 12px; font-family: 'Segoe UI', Arial, sans-serif;
     box-shadow: 4px 4px 15px rgba(0,0,0,0.3); line-height: 1.6;">
     <b style="font-size: 18px; border-bottom: 1px solid #ccc; display: block; margin-bottom: 10px;">Safety Legend</b>
-    
-    <div style="margin-bottom: 5px;">
-        <i class="fa fa-square" style="color:{risk_color(0.0)}; font-size:22px; vertical-align: middle;"></i> 
-        <span style="margin-left: 10px;">Safe</span>
-    </div>
-    <div style="margin-bottom: 5px;">
-        <i class="fa fa-square" style="color:{risk_color(0.3)}; font-size:22px; vertical-align: middle;"></i> 
-        <span style="margin-left: 10px;">Caution</span>
-    </div>
-    <div style="margin-bottom: 5px;">
-        <i class="fa fa-square" style="color:{risk_color(0.6)}; font-size:22px; vertical-align: middle;"></i> 
-        <span style="margin-left: 10px;">Danger</span>
-    </div>
-    <div style="margin-bottom: 5px;">
-        <i class="fa fa-square" style="color:{risk_color(0.9)}; font-size:22px; vertical-align: middle;"></i> 
-        <span style="margin-left: 10px;">High Risk</span>
-    </div>
+
+    {category_rows}
     <div style="margin-bottom: 15px;">
         <i class="fa fa-square" style="color:#bdc3c7; font-size:22px; vertical-align: middle;"></i> 
         <span style="margin-left: 10px; color: #7f8c8d;">No Data</span>
@@ -450,9 +376,11 @@ if __name__ == "__main__":
     parser.add_argument("--continent", required=True)
     parser.add_argument("--city", required=True)
     parser.add_argument("--model", default=None, help="Model name (must match a results/<model>/answers.jsonl)")
-    parser.add_argument("--tiles", choices=TILE_STYLES, default="streets",
-                        help="Background map: streets (default) or positron (paper look), both need MAPTILER_API_KEY; "
-                             "light (no key)")
+    parser.add_argument("--tiles", choices=TILE_STYLES, default="positron",
+                        help="Background map: positron (default, needs MAPTILER_API_KEY, street names "
+                             "visible at close zoom - raster tiles, can't selectively strip labels), "
+                             "streets/backdrop (also need the key), light (no key, Esri canvas), "
+                             "blank (no imagery at all)")
     parser.add_argument("--no-show", action="store_true", help="Don't open the maps in the browser")
     args = parser.parse_args()
 

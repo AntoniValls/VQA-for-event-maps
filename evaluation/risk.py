@@ -83,7 +83,18 @@ DETAIL_CONFIG = {
     "q_surface_cracks_holes": (+1, 0.6),
 }
 
-# Upper bounds of the risk categories: Safe <= 0.15 < Caution < 0.4 <= Danger < 0.7 <= High Risk
+# Upper bounds of the risk categories. Recalibrated for the hierarchical noisy-or formula above -
+# the old cutoffs (0.15/0.4/0.7) were inherited from the pre-hierarchical flat-sum formula, where
+# a handful of ordinary, independently-plausible Level-1 "yes" answers (pedestrians present,
+# vehicle nearby, a marked crossing, a pole with room to pass) never combined into anything above
+# Caution. Under noisy-or they compound further: that exact combination scores ~0.6, which read as
+# "Danger" under the old cutoffs despite being an unremarkable sidewalk. These were re-derived from
+# benchmark scenes (empty street -> Safe, that mundane combination -> Caution, a pedestrian forced
+# onto the road with moving/blocking traffic -> High Risk) rather than carried over unchanged.
+RISK_SAFE_MAX = 0.3
+RISK_CAUTION_MAX = 0.65
+RISK_DANGER_MAX = 0.85
+
 RISK_CATEGORIES = [
     ("Safe",      "#2ecc71"),
     ("Caution",   "#f1c40f"),
@@ -151,11 +162,25 @@ def _node_strength(qid: str, answers_by_question: Dict[str, Dict], memo: Dict[st
     return s_n
 
 
+# When q_obstacle_is_vehicle is Yes, the "obstacle" Obstacle-branch is reporting and the vehicle
+# the Vehicle-branch is independently reporting are the same real-world object (e.g. a parked
+# motorcycle on the sidewalk tends to be flagged as both at once). Combining both branches' full
+# severity via noisy-or double-counts that one object as two independent risks every time it's
+# present, which is why an otherwise-mundane street with a parked vehicle near the path never
+# scores better than mid-Caution. Obstacle's own q_obstacle_is_vehicle child already captures
+# "there's a vehicle here" for that branch, so Vehicle's term is dropped in this case rather than
+# counted a second time.
+_SAME_OBJECT_AS_OBSTACLE = "q_obstacle_is_vehicle"
+
+
 def _image_risk_noisy_or(answers_by_question: Dict[str, Dict]) -> float:
     """R_img = 1 - Pi_i (1 - w_i*y_i*s_i) over the 8 Level-1 questions."""
     memo: Dict[str, float] = {}
     terms = []
+    double_counted_vehicle = _is_yes(answers_by_question.get(_SAME_OBJECT_AS_OBSTACLE))
     for qid, w in WEIGHTS.items():
+        if qid == "q_vehicle_nearby" and double_counted_vehicle:
+            continue
         s_i = _node_strength(qid, answers_by_question, memo) if _is_yes(answers_by_question.get(qid)) else 0.0
         terms.append(w * s_i)
     return 1 - math.prod(1 - t for t in terms)
@@ -204,11 +229,11 @@ def image_risk(answers_by_question: Dict[str, Dict], hierarchical: bool = True, 
 
 def risk_category(score: float) -> int:
     """Index into RISK_CATEGORIES."""
-    if score <= 0.15:
+    if score <= RISK_SAFE_MAX:
         return 0
-    if score < 0.4:
+    if score < RISK_CAUTION_MAX:
         return 1
-    if score < 0.7:
+    if score < RISK_DANGER_MAX:
         return 2
     return 3
 

@@ -635,7 +635,7 @@ $$R_{img} = \frac{\max\left(0, \sum_{i \in Q} w_i x_i\right)}{\sum_{i \in Q} w_i
 All of this is defined once in [`evaluation/risk.py`](evaluation/risk.py) (`HAZARD_CONFIG`, `DETAIL_CONFIG`, `SAFETY_REWARD_RATIO = 1/8`, thresholds), used by both the evaluation and the event maps.
 
 - **Segment risk** = max of the image risks mapped to that OSM street segment.
-- **Categories**: Safe ≤ 0.15 < Caution < 0.4 ≤ Danger < 0.7 ≤ High Risk.
+- **Categories**: Safe ≤ 0.3 < Caution < 0.65 ≤ Danger < 0.85 ≤ High Risk. Recalibrated for the hierarchical formula from benchmark scenes - a few ordinary, independently-plausible Level-1 "yes" answers (pedestrians present, vehicle nearby, a marked crossing, a pole with room to pass) now land in Caution (~0.6) instead of Danger, since noisy-or compounds several mundane signals higher than the old flat-sum formula did.
 - **MAE_R** = mean |R_gt − R_pred| over images (`Risk_MAE` in the outputs).
 
 Per-sequence outputs: `metrics.json`, `metrics_summary.csv`, `answer_characteristics.txt` in `results/<model>/`.
