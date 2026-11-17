@@ -374,6 +374,8 @@ def generate_event_map(seq_dir,
         try:
             with Image.open(image_dir / img_name) as img:
                 img.thumbnail((300, 200))
+                if img.mode != "RGB":
+                    img = img.convert("RGB")  # JPEG can't encode RGBA/P/... (e.g. the ZED PNG keyframes)
                 buf = BytesIO(); img.save(buf, format="JPEG")
                 img_str = base64.b64encode(buf.getvalue()).decode()
                 img_html = f'<img src="data:image/jpeg;base64,{img_str}" style="width:100%; border-radius:5px; margin-bottom:5px;">'
